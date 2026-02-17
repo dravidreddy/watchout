@@ -1,0 +1,8 @@
+# Additional dependencies for orchestration enhancements
+# Add these to your existing requirements.txt
+
+# Structured logging
+structlog>=24.1.0
+
+# Retry logic with exponential backoff
+tenacity>=8.2.3

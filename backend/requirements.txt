@@ -1,0 +1,50 @@
+# Watchout Backend Dependencies
+
+# Core FastAPI
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
+python-dotenv>=1.0.0
+
+# Database
+motor>=3.3.0
+pymongo>=4.6.0
+
+# Firebase Admin
+firebase-admin>=6.4.0
+
+# AI & LLM
+groq>=0.4.0
+langchain>=0.1.0
+langgraph>=0.0.10
+tavily-python>=0.3.0
+
+# Embeddings (disabled for free-tier deployment - uses fallback text search)
+# sentence-transformers>=2.3.0
+
+# HTTP & APIs
+httpx>=0.26.0
+aiohttp>=3.9.0
+
+# Razorpay
+razorpay>=1.4.0
+
+# PDF Generation
+pyppeteer>=2.0.0
+
+# Utilities
+pydantic[email]>=2.0.0
+pydantic-settings>=2.0.0
+tenacity>=8.2.0
+structlog>=24.1.0  # Structured logging for observability
+apscheduler>=3.10.0  # Payment reconciliation cron job
+slowapi>=0.1.9  # Rate limiting
+
+# Testing
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+httpx==0.27.0
+# starlette managed by fastapi
+
+# Security
+PyJWT>=2.8.0

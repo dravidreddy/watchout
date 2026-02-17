@@ -1,0 +1,182 @@
+import React, { useState } from 'react';
+import { MapPin, Calendar, Users, Wallet, Clock, ChevronRight, Download, Share2, Loader2 } from 'lucide-react';
+import { api } from '@/lib/api';
+import { toast } from 'sonner';
+
+interface ItineraryPreviewProps {
+    itinerary: any;
+    isSaving?: boolean;
+    onSave?: () => void;
+    tripId?: string;
+}
+
+export const ItineraryPreview: React.FC<ItineraryPreviewProps> = ({
+    itinerary,
+    isSaving,
+    onSave,
+    tripId
+}) => {
+    const [isExporting, setIsExporting] = useState(false);
+
+    const handleDownload = async () => {
+        if (!tripId) {
+            toast.error('Please save your trip first to export it as PDF');
+            return;
+        }
+        setIsExporting(true);
+        try {
+            await api.downloadItineraryPdf(tripId);
+            toast.success('Itinerary PDF downloaded!');
+        } catch (error) {
+            toast.error('Failed to generate PDF');
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const handleShare = () => {
+        if (!tripId) {
+            toast.error('Please save your trip first to share it');
+            return;
+        }
+        const shareUrl = `${window.location.origin}/shared/${tripId}`;
+        navigator.clipboard.writeText(shareUrl);
+        toast.success('Share link copied to clipboard!');
+    };
+    if (!itinerary) {
+        return (
+            <div className="flex-1 flex items-center justify-center p-8 h-full">
+                <div className="text-center max-w-sm">
+                    <div
+                        className="w-20 h-20 rounded-2xl mx-auto mb-6 flex items-center justify-center"
+                        style={{ background: 'var(--accent-50)' }}
+                    >
+                        <MapPin className="w-10 h-10" style={{ color: 'var(--accent)' }} />
+                    </div>
+                    <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                        Start Planning
+                    </h3>
+                    <p style={{ color: 'var(--text-secondary)' }}>
+                        Tell me where you'd like to go and I'll create a detailed day-by-day itinerary for you.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    const { title, cities, start_date, num_days, num_travelers, budget_total, days } = itinerary;
+
+    return (
+        <div className="flex flex-col h-full overflow-hidden">
+            {/* Summary Header */}
+            <div className="p-6 bg-white border-b" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                        {title || 'Your Trip Plan'}
+                    </h3>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={handleShare}
+                            className="p-2 rounded-lg hover:bg-black/5 transition-colors"
+                            title="Share Trip"
+                        >
+                            <Share2 className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
+                        </button>
+                        <button
+                            onClick={handleDownload}
+                            disabled={isExporting}
+                            className="p-2 rounded-lg hover:bg-black/5 transition-colors"
+                            title="Export to PDF"
+                        >
+                            {isExporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />}
+                        </button>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                        <MapPin className="w-4 h-4 text-accent" />
+                        <span className="truncate">{cities?.join(', ') || 'Picking destinations...'}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                        <Calendar className="w-4 h-4 text-accent" />
+                        <span>{num_days ? `${num_days} Days` : 'Duration TBD'}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                        <Users className="w-4 h-4 text-accent" />
+                        <span>{num_travelers || 1} Travelers</span>
+                    </div>
+                    {budget_total && (
+                        <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                            <Wallet className="w-4 h-4 text-accent" />
+                            <span>₹{budget_total.toLocaleString()}</span>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Day by Day Plan */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+                {days && days.map((day: any, idx: number) => (
+                    <div
+                        key={day.day_number || idx}
+                        className="stagger-item"
+                    >
+                        <div className="flex items-center gap-3 mb-4">
+                            <div
+                                className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm text-white"
+                                style={{ background: 'var(--accent)' }}
+                            >
+                                {day.day_number}
+                            </div>
+                            <h4 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>
+                                {day.city || 'Destination'}
+                            </h4>
+                        </div>
+
+                        <div className="space-y-4 ml-4 border-l-2 pl-6 pb-2" style={{ borderColor: 'var(--accent-50)' }}>
+                            {day.activities && day.activities.map((activity: any, actIdx: number) => (
+                                <div key={actIdx} className="relative">
+                                    {/* Dot on line */}
+                                    <div
+                                        className="absolute -left-[31px] top-1.5 w-2 h-2 rounded-full border-2 border-white"
+                                        style={{ background: 'var(--accent)' }}
+                                    />
+
+                                    <div className="flex flex-col gap-1">
+                                        <div className="flex items-center gap-2 text-xs font-medium" style={{ color: 'var(--accent)' }}>
+                                            <Clock className="w-3 h-3" />
+                                            <span>{activity.time}</span>
+                                        </div>
+                                        <div className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                                            {activity.name}
+                                        </div>
+                                        {activity.description && (
+                                            <p className="text-sm line-clamp-2" style={{ color: 'var(--text-secondary)' }}>
+                                                {activity.description}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                            {(!day.activities || day.activities.length === 0) && (
+                                <p className="text-sm italic" style={{ color: 'var(--text-tertiary)' }}>
+                                    No activities planned yet...
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                ))}
+
+                {(!days || days.length === 0) && (
+                    <div className="py-20 text-center">
+                        <p style={{ color: 'var(--text-tertiary)' }}>
+                            Day-by-day activities will appear here as we refine your trip.
+                        </p>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
