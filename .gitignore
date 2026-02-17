@@ -40,6 +40,14 @@ build/
 out/
 .netlify/
 
+# Debug & Test Output
+debug_*.txt
+debug_*.py
+test_*.py
+playwright-report/
+test-results/
+get_ip.py
+
 # Logs
 logs/
 *.log
