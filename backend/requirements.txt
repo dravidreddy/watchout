@@ -20,6 +20,7 @@ langgraph>=0.0.10
 tavily-python>=0.3.0
 
 # Embeddings (disabled for free-tier deployment - uses fallback text search)
+numpy>=1.26.0
 # sentence-transformers>=2.3.0
 
 # HTTP & APIs
