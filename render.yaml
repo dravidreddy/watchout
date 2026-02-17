@@ -44,5 +44,5 @@ services:
       - key: FRONTEND_URL
         sync: false
       - key: PYTHON_VERSION
-        value: "3.11"
+        value: "3.11.9"
     healthCheckPath: /health
