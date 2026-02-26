@@ -4,6 +4,9 @@ Watchout Backend - WeatherAPI Tool
 import httpx
 from typing import Optional, List, Dict, Any
 from datetime import date
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.core.config import settings
 
@@ -64,7 +67,7 @@ class WeatherAPITool:
             }
             
         except Exception as e:
-            print(f"WeatherAPI current error: {e}")
+            logger.warning("WeatherAPI current error: %s", e)
             return None
     
     async def get_forecast(
@@ -120,7 +123,7 @@ class WeatherAPITool:
             }
             
         except Exception as e:
-            print(f"WeatherAPI forecast error: {e}")
+            logger.warning("WeatherAPI forecast error: %s", e)
             return None
     
     async def get_weather_for_trip(
@@ -194,7 +197,7 @@ class WeatherAPITool:
             ]
             
         except Exception as e:
-            print(f"WeatherAPI alerts error: {e}")
+            logger.warning("WeatherAPI alerts error: %s", e)
             return []
     
     def _parse_current(self, current: Dict) -> Dict[str, Any]:

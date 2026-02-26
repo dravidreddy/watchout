@@ -4,10 +4,31 @@ Uses structlog for better observability and debugging.
 """
 import logging
 import sys
+import re
 from typing import Any
 import structlog
 from structlog.processors import JSONRenderer, TimeStamper, add_log_level
 from structlog.stdlib import ProcessorFormatter
+
+
+# OB8: Scrub PII patterns from logs
+_PII_PATTERNS = [
+    # Emails
+    re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'),
+    # Basic Credit Card (16 digits)
+    re.compile(r'\b(?:\d[ -]*?){13,16}\b'),
+    # Indian Phone Numbers (+91 or simple 10 digit)
+    re.compile(r'\b(?:\+91[-.\s]?)?[6789]\d{9}\b')
+]
+
+def pii_scrubber(logger: logging.Logger, log_method: str, event_dict: dict) -> dict:
+    """Structlog processor to redact PII from string event values."""
+    for k, v in event_dict.items():
+        if isinstance(v, str):
+            for pattern in _PII_PATTERNS:
+                v = pattern.sub("[REDACTED_PII]", v)
+            event_dict[k] = v
+    return event_dict
 
 
 def configure_logging(log_level: str = "INFO") -> None:
@@ -21,6 +42,7 @@ def configure_logging(log_level: str = "INFO") -> None:
     structlog.configure(
         processors=[
             structlog.stdlib.filter_by_level,
+            pii_scrubber,  # Insert PII scrubber early
             structlog.stdlib.add_logger_name,
             structlog.stdlib.add_log_level,
             structlog.processors.TimeStamper(fmt="iso"),
@@ -39,6 +61,8 @@ def configure_logging(log_level: str = "INFO") -> None:
     formatter = ProcessorFormatter(
         processor=JSONRenderer(),
         foreign_pre_chain=[
+            structlog.stdlib.filter_by_level,
+            pii_scrubber,
             add_log_level,
             TimeStamper(fmt="iso"),
         ],

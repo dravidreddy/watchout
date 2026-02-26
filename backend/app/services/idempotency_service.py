@@ -2,7 +2,7 @@
 Payment Idempotency Service
 Prevents duplicate payment processing
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from app.db.mongo import MongoDB
 import hashlib
@@ -59,7 +59,7 @@ class IdempotencyService:
         Returns:
             Previous response if duplicate, None if new request
         """
-        db = MongoDB.get_database()
+        db = MongoDB.get_db()
         collection = db[cls.COLLECTION_NAME]
         
         # Check if key exists
@@ -70,7 +70,7 @@ class IdempotencyService:
             return existing.get("response")
         
         # Store new idempotency record (without response initially)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         await collection.insert_one({
             "idempotency_key": idempotency_key,
             "user_id": user_id,
@@ -98,7 +98,7 @@ class IdempotencyService:
             response_data: Payment response to cache
             status: Status of the operation (success/failed)
         """
-        db = MongoDB.get_database()
+        db = MongoDB.get_db()
         collection = db[cls.COLLECTION_NAME]
         
         await collection.update_one(
@@ -107,7 +107,7 @@ class IdempotencyService:
                 "$set": {
                     "response": response_data,
                     "status": status,
-                    "completed_at": datetime.utcnow()
+                    "completed_at": datetime.now(timezone.utc)
                 }
             }
         )
@@ -120,11 +120,11 @@ class IdempotencyService:
         Returns:
             Number of records deleted
         """
-        db = MongoDB.get_database()
+        db = MongoDB.get_db()
         collection = db[cls.COLLECTION_NAME]
         
         result = await collection.delete_many({
-            "expires_at": {"$lt": datetime.utcnow()}
+            "expires_at": {"$lt": datetime.now(timezone.utc)}
         })
         
         return result.deleted_count
@@ -140,7 +140,7 @@ class IdempotencyService:
         Returns:
             Idempotency record or None
         """
-        db = MongoDB.get_database()
+        db = MongoDB.get_db()
         collection = db[cls.COLLECTION_NAME]
         
         return await collection.find_one({"idempotency_key": idempotency_key})

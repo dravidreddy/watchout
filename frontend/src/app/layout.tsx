@@ -12,12 +12,12 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Bharat Voyager - AI Travel Planner",
+  title: "Watchout - AI Travel Planner",
   description: "Your AI-powered travel companion for planning amazing trips across India. Discover destinations, plan itineraries, and explore with confidence.",
   keywords: ["travel", "India", "AI", "trip planner", "itinerary", "vacation", "tourism"],
-  authors: [{ name: "Bharat Voyager" }],
+  authors: [{ name: "Watchout" }],
   openGraph: {
-    title: "Bharat Voyager - AI Travel Planner",
+    title: "Watchout - AI Travel Planner",
     description: "Plan your perfect Indian adventure with AI",
     type: "website",
   },
@@ -35,6 +35,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
       <head>
+        {/* LCP Font Optimization */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+
         {/* Viewport and display settings */}
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5" />
         <meta name="theme-color" content="#3b82f6" />
@@ -46,7 +50,7 @@ export default function RootLayout({
         {/* Apple-specific PWA meta tags */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="Bharat Voyager" />
+        <meta name="apple-mobile-web-app-title" content="Watchout" />
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
 
         {/* Microsoft Tile */}

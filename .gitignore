@@ -66,3 +66,22 @@ firebase-admin-sdk.json
 # Misc
 *.pdf
 .vercel
+
+# TypeScript build cache
+frontend/tsconfig.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Local debug/scratch files
+last_error.txt
+backend/models.txt
+
+# Split requirements files (use requirements.txt only)
+backend/requirements-enhancements.txt
+backend/requirements-rate-limiting.txt
+
+# Old Redis worker (replaced by MCP orchestrator)
+backend/app/workers/
+
+# k6 load test results
+k6/results/
+k6/*.json

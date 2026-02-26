@@ -16,11 +16,11 @@ interface DayPlan {
     day_number: number;
     city: string;
     theme?: string;
-    activities: Activity[];
+    stops: ActivityStop[];
     notes?: string;
 }
 
-interface Activity {
+interface ActivityStop {
     time?: string;
     name: string;
     description?: string;
@@ -92,7 +92,7 @@ export function ItineraryDisplay({ itinerary }: ItineraryProps) {
 
                     {/* Activities */}
                     <div className="p-4 space-y-4">
-                        {day.activities.map((activity, i) => (
+                        {day.stops.map((activity, i) => (
                             <div key={i} className="flex gap-4">
                                 {/* Time */}
                                 <div className="w-16 flex-shrink-0 text-right">

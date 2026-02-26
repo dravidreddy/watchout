@@ -3,6 +3,9 @@ Watchout Backend - Tavily Search API Tool
 """
 import httpx
 from typing import Optional, List, Dict, Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.core.config import settings
 
@@ -68,7 +71,7 @@ class TavilySearchTool:
             }
             
         except Exception as e:
-            print(f"Tavily search error: {e}")
+            logger.warning("Tavily search error: %s", e)
             return None
     
     async def search_travel_info(

@@ -51,12 +51,7 @@ Since direct booking APIs are limited, you provide:
     ) -> Dict[str, Any]:
         """
         Find transportation options between cities.
-        
-        Context should include:
-        - from_city: Origin city
-        - to_city: Destination city
-        - date: Travel date
-        - budget: Budget preference
+        Returns standardized format: {response, data, error}
         """
         context = context or {}
         from_city = context.get("from_city", "")
@@ -66,17 +61,30 @@ Since direct booking APIs are limited, you provide:
         
         if not from_city or not to_city:
             # Try to extract from user input
-            return await self._handle_general_query(user_input)
+            result = await self._handle_general_query(user_input)
+            return {
+                "response": result["response"],
+                "data": {"options": None},
+                "error": None
+            }
         
         # Get options for all transport modes
-        options = await self._get_transport_options(
-            from_city, to_city, travel_date, budget
-        )
-        
-        return {
-            "response": self._format_response(from_city, to_city, options),
-            "options": options
-        }
+        try:
+            options = await self._get_transport_options(
+                from_city, to_city, travel_date, budget
+            )
+            
+            return {
+                "response": self._format_response(from_city, to_city, options),
+                "data": {"options": options},
+                "error": None
+            }
+        except Exception as e:
+            return {
+                "response": "Unavailable to fetch transport options at the moment.",
+                "data": {},
+                "error": str(e)
+            }
     
     async def _get_transport_options(
         self,
@@ -117,20 +125,46 @@ Since direct booking APIs are limited, you provide:
         budget: str,
         search_data: Optional[Dict] = None
     ) -> Dict[str, Any]:
-        """Generate transport recommendations using LLM."""
+        """Generate transport recommendations using LLM with India-specific expertise."""
         search_context = ""
         if search_data:
             search_context = f"\nRecent search data: {search_data.get('answer', '')}"
-        
-        prompt = f"""Provide transportation options from {from_city} to {to_city} in India.
-Budget level: {budget}
+
+        # Budget-based class recommendation
+        class_guide = {
+            "budget": "Sleeper (SL) or 3AC for overnight; State bus for short routes",
+            "mid_range": "3AC or 2AC for trains; Volvo AC bus overnight",
+            "luxury": "1AC Rajdhani/Shatabdi; Vistara/Air India direct; private cab"
+        }.get(budget, "3AC for trains")
+
+        prompt = f"""You are Watchout's transport expert — you know every train route, bus operator, and travel hack for getting around India efficiently.
+
+Route: {from_city} → {to_city}
+Budget: {budget} (recommended class: {class_guide})
 {search_context}
 
-Include approximate prices in INR and travel times.
-Consider flight, train, and bus options based on distance.
-For short distances (<300km), focus on trains/buses/cabs.
-For long distances, include flight options."""
-        
+Give honest, practical, opinionated transport advice. Tell them what YOU would take, not a list of equal options.
+
+For TRAINS (if applicable):
+- Name the 1–2 best trains for this specific route with typical departure times and journey duration
+- Base class recommendation on their budget level: {class_guide}
+- IMPORTANT: Flag if this is a high-demand route that needs Tatkal booking (Rajdhani, Shatabdi, popular weekend routes)
+- Note the ideal booking window (usually 2–6 weeks in advance for good seats)
+
+For FLIGHTS (for routes >500 km or >8 hours by train):
+- Give realistic price ranges — narrow it down (not just “₹3,000–₹15,000”)
+- Best booking window (typically 3–6 weeks for domestic)
+- Flag if the airport is far from the city centre (affects arrival time planning)
+
+For BUSES:
+- AC Volvo sleeper for overnight journeys; state buses only for budget short routes
+- Name reliable operators for this specific route where known (KSRTC for Karnataka, MSRTC for Maharashtra, etc.)
+
+GOLDEN TIP: One piece of advice specific to THIS route that most tourists don’t know
+(e.g., “The Deccan Queen runs on weekdays only” or “Auto’s from Agra Cantt station are notorious for overcharging — use Ola”)
+
+Be direct. Be specific. Don’t hedge everything."""
+
         schema = {
             "type": "object",
             "properties": {
@@ -156,7 +190,8 @@ For long distances, include flight options."""
                             "number": {"type": "string"},
                             "duration": {"type": "string"},
                             "classes": {"type": "array", "items": {"type": "string"}},
-                            "price_range": {"type": "string"}
+                            "price_range": {"type": "string"},
+                            "booking_tip": {"type": "string"}
                         }
                     }
                 },
@@ -180,22 +215,31 @@ For long distances, include flight options."""
                         "duration": {"type": "string"}
                     }
                 },
+                "golden_tip": {"type": "string"},
                 "tips": {"type": "array", "items": {"type": "string"}}
             }
         }
-        
+
         result = await self.generate_structured(prompt, schema)
         return result or {}
     
     async def _handle_general_query(self, query: str) -> Dict[str, Any]:
-        """Handle general transportation queries."""
+        """Handle general transportation queries with India expertise."""
         response_parts = []
-        
+
         async for chunk in self.stream(
-            f"Answer this transportation question for India travel: {query}"
+            f"""You are Watchout, India's friendliest travel companion. Answer this transport question warmly and with genuine India expertise.
+
+Question: {query}
+
+Include:
+- Practical, specific advice (not generic "check IRCTC" without context)
+- Indian transport cultural context where relevant (e.g., Tatkal quotas, senior citizen concessions, ladies coaches on trains)
+- Direct booking links/platforms where helpful (IRCTC, RedBus, MakeMyTrip, Ixigo)
+- Honest opinion on the best option for typical Indian travelers"""
         ):
             response_parts.append(chunk)
-        
+
         return {
             "response": "".join(response_parts),
             "options": None
@@ -221,59 +265,57 @@ For long distances, include flight options."""
         to_city: str,
         options: Dict[str, Any]
     ) -> str:
-        """Format transport options as a response."""
-        response = f"""🚂 **Transportation: {from_city} → {to_city}**
-
-"""
+        """Format transport options as a conversational response."""
+        response = f"Here are the best ways to get from **{from_city}** to **{to_city}** 🚍✈️\n\n"
         
         recommended = options.get("recommended_mode", "train")
-        response += f"**Recommended:** {recommended.title()}\n\n"
+        response += f"I recommend taking a **{recommended}** for this route.\n\n"
         
         # Flights
         flights = options.get("flights", [])
         if flights:
-            response += "✈️ **Flights**\n"
+            response += "**✈️ Flights:**\n"
             for flight in flights[:2]:
                 airlines = ", ".join(flight.get("airlines", ["Multiple airlines"]))
-                response += f"• {airlines} - {flight.get('duration', 'N/A')}\n"
-                response += f"  Price: {flight.get('price_range', 'Check online')}\n"
+                response += f"• {airlines} take about {flight.get('duration', 'N/A')}"
+                if flight.get('price_range'):
+                    response += f" ({flight.get('price_range')})"
+                response += ".\n"
             response += "\n"
         
         # Trains
         trains = options.get("trains", [])
         if trains:
-            response += "🚂 **Trains**\n"
+            response += "**🚂 Trains:**\n"
             for train in trains[:3]:
-                response += f"• {train.get('name', 'Train')} ({train.get('number', '')})\n"
-                response += f"  Duration: {train.get('duration', 'N/A')}, Price: {train.get('price_range', 'Check IRCTC')}\n"
+                response += f"• {train.get('name', 'Train')}: {train.get('duration', 'N/A')}"
+                if train.get('price_range'):
+                     response += f" approx {train.get('price_range')}"
+                response += "\n"
             response += "\n"
         
         # Buses
         buses = options.get("buses", [])
         if buses:
-            response += "🚌 **Buses**\n"
+            response += "**🚌 Buses:**\n"
             for bus in buses[:2]:
-                response += f"• {bus.get('type', 'Bus')} - {bus.get('duration', 'N/A')}\n"
-                response += f"  Price: {bus.get('price_range', 'Check RedBus')}\n"
+                response += f"• {bus.get('type', 'Bus')}: {bus.get('duration', 'N/A')}\n"
             response += "\n"
         
-        # Tips
+        # Tips including in natural flow
         tips = options.get("tips", [])
         if tips:
-            response += "💡 **Tips**\n"
-            for tip in tips[:3]:
-                response += f"• {tip}\n"
-            response += "\n"
+            response += "**💡 Pro Tip:** " + " ".join(tips[:2]) + "\n\n"
         
-        # Booking links
+        # Booking links compact
         links = options.get("booking_links", {})
         if links:
-            response += "🔗 **Book Here:**\n"
-            if links.get("irctc"):
-                response += f"• [IRCTC (Trains)]({links['irctc']})\n"
-            if links.get("redbus"):
-                response += f"• [RedBus]({links['redbus']})\n"
-            if links.get("makemytrip_flights"):
-                response += f"• [MakeMyTrip Flights]({links['makemytrip_flights']})\n"
+            links_list = []
+            if links.get("irctc"): links_list.append(f"[IRCTC]({links['irctc']})")
+            if links.get("redbus"): links_list.append(f"[RedBus]({links['redbus']})")
+            if links.get("makemytrip_flights"): links_list.append(f"[Flights]({links['makemytrip_flights']})")
+            
+            if links_list:
+                response += f"Book here: {' | '.join(links_list)}"
         
         return response

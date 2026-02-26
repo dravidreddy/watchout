@@ -5,9 +5,10 @@ Digital Personal Data Protection Act 2023 compliance models.
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, Literal
+from enum import Enum
 
 
-class ConsentPurpose(str):
+class ConsentPurpose(str, Enum):
     """Valid consent purposes as per DPDP Act."""
     TRAVEL_PLANNING = "travel_planning"
     PERSONALIZATION = "personalization"

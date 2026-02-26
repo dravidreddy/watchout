@@ -32,7 +32,7 @@ export default function Home() {
             B
           </div>
           <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
-            Bharat Voyager
+            Watchout
           </h1>
           <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
             Loading...

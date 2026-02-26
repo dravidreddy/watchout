@@ -43,13 +43,7 @@ Provide real options with booking links."""
     ) -> Dict[str, Any]:
         """
         Find accommodation options for a destination.
-        
-        Context should include:
-        - city: Destination city
-        - budget: Budget level
-        - preferences: Accommodation preferences
-        - check_in: Check-in date
-        - check_out: Check-out date
+        Returns standardized format: {response, data, error}
         """
         context = context or {}
         city = context.get("city", "")
@@ -57,17 +51,30 @@ Provide real options with booking links."""
         preferences = context.get("preferences", {})
         
         if not city:
-            return await self._handle_general_query(user_input)
+            result = await self._handle_general_query(user_input)
+            return {
+                "response": result["response"],
+                "data": {"accommodations": None},
+                "error": None
+            }
         
         # Search for hotels
-        accommodations = await self._search_accommodations(
-            city, budget, preferences
-        )
-        
-        return {
-            "response": self._format_response(city, accommodations),
-            "accommodations": accommodations
-        }
+        try:
+            accommodations = await self._search_accommodations(
+                city, budget, preferences
+            )
+            
+            return {
+                "response": self._format_response(city, accommodations),
+                "data": {"accommodations": accommodations},
+                "error": None
+            }
+        except Exception as e:
+            return {
+                "response": "I couldn't fetch hotel options right now.",
+                "data": {},
+                "error": str(e)
+            }
     
     async def _search_accommodations(
         self,
@@ -131,16 +138,41 @@ Provide real options with booking links."""
         options: List[Dict],
         preferences: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
-        """Generate personalized recommendations."""
-        
-        prompt = f"""Based on these accommodation options in {city}:
+        """Generate personalized recommendations with full traveler context."""
+        num_travelers = preferences.get("num_travelers", 1)
+        travel_style = preferences.get("travel_style", "not specified")
+        vibe = preferences.get("travel_vibe", [])
+        vibe_str = ", ".join(vibe) if isinstance(vibe, list) else str(vibe) if vibe else "not specified"
+        start_date = preferences.get("start_date", "?")
+        end_date = preferences.get("end_date", "?")
+
+        # Budget price ranges for guidance
+        budget_guide = {
+            "budget": "₹800–2,500/night",
+            "mid_range": "₹2,500–8,000/night",
+            "luxury": "₹12,000+/night"
+        }.get(budget, "mid-range pricing")
+
+        prompt = f"""You are Watchout's accommodation expert. Based on these {len(options)} hotel/stay options in {city}:
 {options[:5]}
 
-Budget level: {budget}
-Preferences: {preferences}
+TRAVELER CONTEXT:
+- Number of people: {num_travelers}
+- Travel style: {travel_style}
+- Trip vibe: {vibe_str}
+- Budget level: {budget} ({budget_guide})
+- Trip dates: {start_date} to {end_date}
 
-Recommend the top 3 options with reasons why they'd be great for this traveler."""
-        
+Pick the top 3 stays. For each, tell me:
+1. WHY it suits THIS specific traveler (not generic reasons — reference their vibe and style directly)
+2. The neighborhood and what's within easy walking distance
+3. Any honest caution (noisy street? far from main attractions? limited dining nearby?)
+4. Estimated price per night in INR
+5. Who it's "best for" (e.g., "couples seeking quiet privacy" / "families needing space" / "backpackers wanting social buzzy hostels")
+
+Don't write brochure copy. Be a knowledgeable friend who has stayed in {city} and genuinely knows these properties.
+If one option is better value but another has a better location, say both clearly."""
+
         schema = {
             "type": "object",
             "properties": {
@@ -151,6 +183,8 @@ Recommend the top 3 options with reasons why they'd be great for this traveler."
                         "properties": {
                             "name": {"type": "string"},
                             "reason": {"type": "string"},
+                            "neighborhood_notes": {"type": "string"},
+                            "caution": {"type": "string"},
                             "best_for": {"type": "string"},
                             "estimated_price": {"type": "string"}
                         }
@@ -158,19 +192,23 @@ Recommend the top 3 options with reasons why they'd be great for this traveler."
                 }
             }
         }
-        
+
         result = await self.generate_structured(prompt, schema)
         return result.get("recommendations", []) if result else []
     
     async def _handle_general_query(self, query: str) -> Dict[str, Any]:
-        """Handle general accommodation queries."""
+        """Handle general accommodation queries with warmth and India context."""
         response_parts = []
-        
+
         async for chunk in self.stream(
-            f"Answer this accommodation question for India travel: {query}"
+            f"""You are Watchout, India's warmest travel companion. Answer this accommodation question naturally and helpfully.
+
+Question: {query}
+
+Provide a warm, specific, India-knowledgeable answer. Include practical tips about booking platforms Indians use (MakeMyTrip, Goibibo, OYO, Booking.com) and any cultural context relevant to accommodation in India."""
         ):
             response_parts.append(chunk)
-        
+
         return {
             "response": "".join(response_parts),
             "accommodations": None
@@ -192,40 +230,34 @@ Recommend the top 3 options with reasons why they'd be great for this traveler."
         city: str,
         accommodations: Dict[str, Any]
     ) -> str:
-        """Format accommodation options as a response."""
-        response = f"""🏨 **Accommodations in {city}**
-
-"""
+        """Format accommodation options as a conversational response."""
+        response = f"I've found some great places to stay in **{city}**! 🏨\n\n"
         
         # Recommendations
         recommendations = accommodations.get("recommendations", [])
         if recommendations:
-            response += "**Top Recommendations:**\n"
-            for i, rec in enumerate(recommendations[:3], 1):
-                response += f"\n{i}. **{rec.get('name', 'Option')}**\n"
-                response += f"   {rec.get('reason', '')}\n"
-                response += f"   Best for: {rec.get('best_for', 'All travelers')}\n"
+            response += "Based on your preferences, here are my top picks:\n\n"
+            for rec in recommendations[:3]:
+                response += f"• **{rec.get('name', 'Option')}**: {rec.get('reason', '')} (Best for: {rec.get('best_for', 'All travelers')})\n"
                 if rec.get("estimated_price"):
-                    response += f"   Price: {rec['estimated_price']}\n"
+                    response += f"  (Approx. {rec['estimated_price']})\n"
+            response += "\n"
         
         # All options summary
         options = accommodations.get("options", [])
-        if options:
-            response += f"\n**Found {len(options)} options** ranging from hostels to hotels.\n"
-            
-            # Show top rated
+        if options and not recommendations:
+             # Fallback if no specific recommendations
+            response += f"I found **{len(options)} options** ranging from hostels to luxury resorts.\n"
             top_rated = sorted(options, key=lambda x: x.get("rating", 0), reverse=True)[:3]
-            response += "\n**Highest Rated:**\n"
             for opt in top_rated:
                 stars = "⭐" * int(opt.get("rating", 0))
-                response += f"• {opt.get('name')} - {opt.get('rating', 'N/A')} {stars}\n"
-        
+                response += f"• **{opt.get('name')}** {stars} ({opt.get('rating', 'N/A')})\n"
+            response += "\n"
+
         # Booking links
         links = accommodations.get("booking_links", {})
-        response += "\n🔗 **Book Here:**\n"
-        response += f"• [Booking.com]({links.get('booking', '')})\n"
-        response += f"• [MakeMyTrip]({links.get('makemytrip', '')})\n"
-        response += f"• [Airbnb]({links.get('airbnb', '')})\n"
-        response += f"• [OYO]({links.get('oyo', '')})\n"
+        if links:
+            response += "You can check availability and book here:\n"
+            response += f"• [Booking.com]({links.get('booking', '')}) | [Airbnb]({links.get('airbnb', '')}) | [MakeMyTrip]({links.get('makemytrip', '')})"
         
         return response

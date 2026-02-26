@@ -95,7 +95,7 @@ export default function SharedTripPage() {
                 {/* CTA for viewers */}
                 <div className="mt-8 p-8 text-center">
                     <h3 className="text-xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Want to plan your own trip?</h3>
-                    <p className="text-gray-600 mb-6" style={{ color: 'var(--text-secondary)' }}>Bharat Voyager uses AI to build perfectly customized itineraries in seconds.</p>
+                    <p className="text-gray-600 mb-6" style={{ color: 'var(--text-secondary)' }}>Watchout uses AI to build perfectly customized itineraries in seconds.</p>
                     <Link href="/">
                         <button className="btn btn-primary px-8">Get Started</button>
                     </Link>

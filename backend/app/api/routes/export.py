@@ -40,8 +40,14 @@ async def export_itinerary_to_pdf(
             content=pdf_bytes,
             media_type="application/pdf",
             headers={
-                "Content-Disposition": f"attachment; filename={filename}"
+                "Content-Disposition": f'attachment; filename="{filename}"'
             }
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = str(e)
+        if "Executable doesn't exist" in error_msg or "Chromium" in error_msg:
+            raise HTTPException(
+                status_code=500, 
+                detail=f"PDF Generator Error (Missing Chromium dependency): {error_msg}. Try running 'playwright install chromium' on the server."
+            )
+        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {error_msg}")

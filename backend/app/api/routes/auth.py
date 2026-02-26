@@ -3,7 +3,7 @@ Authentication Routes
 Includes login, profile management, and account deletion (DPDP Act compliance).
 """
 from fastapi import APIRouter, HTTPException, Depends, Request
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.core.firebase_auth import verify_firebase_token
 from app.models.user import UserCreate, UserUpdate, UserResponse, UserPreferences
@@ -15,8 +15,17 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 @router.post("/login", response_model=UserResponse)
-async def login_user(user_data: UserCreate):
+async def login_user(
+    user_data: UserCreate,
+    token_data: dict = Depends(verify_firebase_token)
+):
     """Login or Register a user from Firebase auth."""
+    # Validate that the token's uid matches the provided firebase_id
+    if token_data["uid"] != user_data.firebase_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Token UID does not match provided firebase_id"
+        )
     users = users_collection()
     
     # Check if user exists
@@ -34,8 +43,8 @@ async def login_user(user_data: UserCreate):
         "preferences": {},
         "onboarding_completed": False,
         "subscription_tier": "free",
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
     }
     
     result = await users.insert_one(user_doc)
@@ -61,8 +70,8 @@ async def get_current_user_profile(
             "preferences": {},
             "onboarding_completed": False,
             "subscription_tier": "free",
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc)
         }
         result = await users.insert_one(user_doc)
         user_doc["_id"] = str(result.inserted_id)
@@ -72,6 +81,10 @@ async def get_current_user_profile(
         raise HTTPException(status_code=404, detail="User not found")
     
     user["_id"] = str(user["_id"])
+    # Pass along bypass status if present in token for test transparency
+    if token_data.get("is_dev_bypass"):
+        user["is_dev_bypass"] = True
+        
     return user
 
 
@@ -83,7 +96,7 @@ async def update_user_profile(
     """Update current user's profile."""
     users = users_collection()
     
-    update_doc = {"updated_at": datetime.utcnow()}
+    update_doc = {"updated_at": datetime.now(timezone.utc)}
     
     if update_data.name is not None:
         update_doc["name"] = update_data.name
@@ -95,6 +108,8 @@ async def update_user_profile(
         update_doc["onboarding_completed"] = update_data.onboarding_completed
     if update_data.preferences is not None:
         update_doc["preferences"] = update_data.preferences.model_dump()
+    if update_data.subscription_tier is not None:
+        update_doc["subscription_tier"] = update_data.subscription_tier
     
     result = await users.find_one_and_update(
         {"firebase_id": token_data["uid"]},
@@ -115,7 +130,7 @@ async def logout(token_data: dict = Depends(verify_firebase_token)):
     users = users_collection()
     await users.update_one(
         {"firebase_id": token_data["uid"]},
-        {"$set": {"last_logout": datetime.utcnow()}}
+        {"$set": {"last_logout": datetime.now(timezone.utc)}}
     )
     return {"status": "logged_out"}
 
@@ -148,7 +163,7 @@ async def delete_account(
         "status": "deleted",
         "message": "Account and all data permanently deleted",
         "stats": stats,
-        "deleted_at": datetime.utcnow()
+        "deleted_at": datetime.now(timezone.utc)
     }
 
 

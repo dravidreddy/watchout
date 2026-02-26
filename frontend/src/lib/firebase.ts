@@ -104,7 +104,7 @@ export async function getIdToken(): Promise<string | null> {
 
         // Force refresh if token is about to expire (handled by Firebase automatically, 
         // but we can force it if needed)
-        return await user.getIdToken(true);
+        return await user.getIdToken();
     } catch (error) {
         console.error('Get token error:', error);
         return null;

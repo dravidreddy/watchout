@@ -2,8 +2,13 @@
 Watchout Backend - Atlas Vector Search
 """
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -11,6 +16,9 @@ try:
 except ImportError:
     SentenceTransformer = None  # type: ignore
     _ST_AVAILABLE = False
+
+# Thread pool for CPU-bound embedding — keeps asyncio event loop unblocked (AR1)
+_EMBED_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="embed")
 
 from app.db.mongo import memories_collection
 from app.core.config import settings
@@ -25,6 +33,11 @@ class VectorStore:
     _model = None
     _embedding_dim: int = 384  # all-MiniLM-L6-v2 dimension
     
+    def __init__(self):
+        """Initialize VectorStore."""
+        # Warm up model if needed
+        self.get_model()
+    
     @classmethod
     def get_model(cls):
         """Get or initialize the embedding model."""
@@ -35,18 +48,34 @@ class VectorStore:
             cls._model = SentenceTransformer("all-MiniLM-L6-v2")
         return cls._model
     
-    @classmethod
-    def generate_embedding(cls, text: str) -> List[float]:
-        """Generate embedding for a text string."""
-        model = cls.get_model()
+    def generate_embedding(self, text: str) -> List[float]:
+        """Generate embedding (synchronous — use generate_embedding_async in async contexts)."""
+        model = self.get_model()
         if model is None:
             return []  # No embeddings without sentence-transformers
         embedding = model.encode(text, convert_to_numpy=True)
         return embedding.tolist()
+
+    async def generate_embedding_async(self, text: str) -> List[float]:
+        """
+        Async wrapper — runs SentenceTransformer.encode() in a thread pool.
+
+        SentenceTransformer.encode() is CPU-bound (numpy matmul). Calling it
+        directly in a coroutine blocks the entire asyncio event loop, which
+        freezes all concurrent SSE streams. This offloads the work to a
+        dedicated 2-thread executor so the event loop stays responsive (AR1).
+        """
+        model = self.get_model()
+        if model is None:
+            return []
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            _EMBED_EXECUTOR,
+            lambda: model.encode(text, convert_to_numpy=True).tolist(),
+        )
     
-    @classmethod
     async def store_memory(
-        cls,
+        self,
         user_id: str,
         content: str,
         memory_type: str = "preference",
@@ -64,7 +93,8 @@ class VectorStore:
         Returns:
             The inserted document ID
         """
-        embedding = cls.generate_embedding(content)
+        # Use async embedding to avoid blocking the event loop (AR1)
+        embedding = await self.generate_embedding_async(content)
         
         document = {
             "user_id": user_id,
@@ -72,16 +102,15 @@ class VectorStore:
             "type": memory_type,
             "embedding": embedding,
             "metadata": metadata or {},
-            "created_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc)
         }
         
         collection = memories_collection()
         result = await collection.insert_one(document)
         return str(result.inserted_id)
     
-    @classmethod
     async def search_memories(
-        cls,
+        self,
         user_id: str,
         query: str,
         memory_type: Optional[str] = None,
@@ -99,7 +128,7 @@ class VectorStore:
         Returns:
             List of matching memories with similarity scores
         """
-        query_embedding = cls.generate_embedding(query)
+        query_embedding = self.generate_embedding(query)
         
         # Build the vector search pipeline
         # Note: This requires Atlas Vector Search index to be configured
@@ -136,50 +165,63 @@ class VectorStore:
             return results
         except Exception as e:
             # Fallback to simple text search if vector search is not configured
-            print(f"Vector search failed, falling back to text search: {e}")
-            return await cls._fallback_search(user_id, query, memory_type, limit)
+            logger.warning("Vector search failed, falling back to text search: %s", e)
+            return await self._fallback_search(user_id, query, memory_type, limit)
     
-    @classmethod
     async def _fallback_search(
-        cls,
+        self,
         user_id: str,
         query: str,
         memory_type: Optional[str] = None,
         limit: int = 5
     ) -> List[Dict[str, Any]]:
-        """Fallback text search when vector search is not available."""
+        """
+        Text-search fallback when vector search is unavailable.
+
+        Uses MongoDB $text operator (backed by a text index on `content`)
+        instead of $regex to prevent ReDoS via catastrophic backtracking.
+        Query is capped at 200 chars as an additional guard.
+        """
         collection = memories_collection()
-        
-        filter_query = {"user_id": user_id}
+
+        # Truncate query — prevents abusive long regex-like strings
+        safe_query = query[:200].strip()
+        if not safe_query:
+            return []
+
+        filter_query: Dict[str, Any] = {
+            "user_id": user_id,
+            "$text": {"$search": safe_query},
+        }
         if memory_type:
             filter_query["type"] = memory_type
-        
-        # Simple text-based search
-        filter_query["content"] = {"$regex": query, "$options": "i"}
-        
+
         cursor = collection.find(
             filter_query,
-            {"embedding": 0}  # Exclude embedding from results
-        ).sort("created_at", -1).limit(limit)
-        
+            {
+                "embedding": 0,
+                "score": {"$meta": "textScore"},
+            }
+        ).sort(
+            [("score", {"$meta": "textScore"})]
+        ).limit(limit)
+
         results = await cursor.to_list(length=limit)
-        
-        # Add a mock score for consistency
+
+        # Normalise score field for consistency with vector search results
         for result in results:
-            result["score"] = 0.5
-        
+            result["score"] = result.get("score", 0.5)
+
         return results
     
-    @classmethod
-    async def delete_user_memories(cls, user_id: str) -> int:
+    async def delete_user_memories(self, user_id: str) -> int:
         """Delete all memories for a user (for GDPR/data deletion)."""
         collection = memories_collection()
         result = await collection.delete_many({"user_id": user_id})
         return result.deleted_count
     
-    @classmethod
     async def get_recent_memories(
-        cls,
+        self,
         user_id: str,
         limit: int = 10,
         memory_type: Optional[str] = None
@@ -202,4 +244,4 @@ class VectorStore:
 # Convenience function for dependency injection
 async def get_vector_store() -> VectorStore:
     """Get vector store instance."""
-    return VectorStore
+    return VectorStore()

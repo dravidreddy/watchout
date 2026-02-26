@@ -4,8 +4,11 @@ Watchout Backend - Conversation Manager Service
 Handles conversation persistence and context management.
 """
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from bson import ObjectId
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.db.mongo import conversations_collection, trips_collection, MongoDB
 from app.db.vector_store import VectorStore
@@ -49,7 +52,7 @@ class ConversationManager:
         message = {
             "role": role,
             "content": content,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "metadata": metadata or {}
         }
         
@@ -58,11 +61,11 @@ class ConversationManager:
             {"trip_id": trip_id, "user_id": user_id},
             {
                 "$push": {"messages": message},
-                "$set": {"updated_at": datetime.utcnow()},
+                "$set": {"updated_at": datetime.now(timezone.utc)},
                 "$setOnInsert": {
                     "trip_id": trip_id,
                     "user_id": user_id,
-                    "created_at": datetime.utcnow()
+                    "created_at": datetime.now(timezone.utc)
                 }
             },
             upsert=True
@@ -110,14 +113,14 @@ class ConversationManager:
                 user_msg = {
                     "role": "user",
                     "content": user_message,
-                    "timestamp": datetime.utcnow(),
+                    "timestamp": datetime.now(timezone.utc),
                     "metadata": {}
                 }
                 
                 assistant_msg = {
                     "role": "assistant",
                     "content": assistant_message,
-                    "timestamp": datetime.utcnow(),
+                    "timestamp": datetime.now(timezone.utc),
                     "metadata": assistant_metadata or {}
                 }
                 
@@ -130,11 +133,11 @@ class ConversationManager:
                                 "$each": [user_msg, assistant_msg]
                             }
                         },
-                        "$set": {"updated_at": datetime.utcnow()},
+                        "$set": {"updated_at": datetime.now(timezone.utc)},
                         "$setOnInsert": {
                             "trip_id": trip_id,
                             "user_id": user_id,
-                            "created_at": datetime.utcnow()
+                            "created_at": datetime.now(timezone.utc)
                         }
                     },
                     upsert=True,
@@ -224,7 +227,7 @@ class ConversationManager:
                 context["preferences"] = trip.get("preferences", {})
                 context["itinerary"] = trip.get("itinerary")
         except Exception as e:
-            print(f"Error loading trip: {e}")
+            logger.warning("Error loading trip: %s", e)
         
         # 2. Get conversation history
         if include_history:
@@ -233,7 +236,7 @@ class ConversationManager:
                     trip_id, user_id, limit=history_limit
                 )
             except Exception as e:
-                print(f"Error loading history: {e}")
+                logger.warning("Error loading history: %s", e)
         
         # 3. Get relevant memories
         try:
@@ -245,7 +248,7 @@ class ConversationManager:
                 for m in memories
             ]
         except Exception as e:
-            print(f"Error loading memories: {e}")
+            logger.warning("Error loading memories: %s", e)
         
         return context
     
@@ -299,12 +302,12 @@ class ConversationManager:
             {
                 "$set": {
                     "preferences": preferences,
-                    "updated_at": datetime.utcnow()
+                    "updated_at": datetime.now(timezone.utc)
                 },
                 "$setOnInsert": {
                     "_id": trip_id,
                     "user_id": user_id,
-                    "created_at": datetime.utcnow()
+                    "created_at": datetime.now(timezone.utc)
                 }
             },
             upsert=True

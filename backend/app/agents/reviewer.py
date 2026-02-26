@@ -3,7 +3,10 @@ Reviewer Agent for Prompt Injection Protection
 Validates user inputs and AI outputs for safety issues.
 """
 from typing import Dict, Any, Optional
+import logging
 from app.agents.base import BaseAgent
+
+logger = logging.getLogger(__name__)
 
 
 class ReviewerAgent(BaseAgent):
@@ -109,7 +112,7 @@ Return ONLY a JSON object:
         except Exception as e:
             # On error, log and allow (fail open to avoid blocking legitimate users)
             # In production, you might want to fail closed (block on error)
-            print(f"Safety check error: {e}")
+            logger.warning("Safety check error: %s", e)
             return {
                 "is_safe": True,
                 "issues": ["safety_check_error"],
@@ -189,7 +192,7 @@ Return ONLY a JSON object:
             return result
             
         except Exception as e:
-            print(f"Output safety check error: {e}")
+            logger.warning("Output safety check error: %s", e)
             return {
                 "is_safe": True,
                 "issues": ["safety_check_error"],
@@ -297,6 +300,69 @@ Return ONLY a JSON object:
                 "specific_facts_found": [],
                 "tools_called": tools_called
             }
+
+    async def review_itinerary(
+        self, 
+        itinerary_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Validate physical and temporal constraints of the generated itinerary.
+        """
+        prompt = f"""Review this travel itinerary for physical and temporal constraints.
+
+ITINERARY DATA: {itinerary_data}
+
+Check for:
+1. **Temporal Impossibility**: Too many activities in one day, insufficient travel time between stops.
+2. **Physical Impossibility**: Activities in widely separated cities on the same day without travel time.
+3. **Logic Errors**: Unrealistic durations, backtracking, etc.
+
+Return ONLY a JSON object:
+{{
+    "is_feasible": true/false,
+    "issues": ["list of specific constraint violations"],
+    "severity": "low|medium|high",
+    "reasoning": "brief explanation"
+}}"""
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "is_feasible": {"type": "boolean"},
+                "issues": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                },
+                "severity": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high"]
+                },
+                "reasoning": {"type": "string"}
+            },
+            "required": ["is_feasible", "issues", "severity", "reasoning"]
+        }
+        
+        try:
+            result = await self.generate_structured(prompt, schema)
+            
+            if not result:
+                return {
+                    "is_feasible": True,
+                    "issues": [],
+                    "severity": "low",
+                    "reasoning": "Fallback (check failed)"
+                }
+            
+            return result
+        except Exception as e:
+            logger.warning("Itinerary review error: %s", e)
+            return {
+                "is_feasible": True,
+                "issues": [],
+                "severity": "low",
+                "reasoning": f"Error: {str(e)}"
+            }
+
     
     async def run(
         self,

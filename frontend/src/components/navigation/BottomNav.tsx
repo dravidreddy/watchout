@@ -2,11 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Briefcase, Compass, User, Plus } from 'lucide-react';
+import { Home, Briefcase, Compass, User, Plus, MessageSquare, MessageSquarePlus } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 const tabs = [
     { name: 'Home', href: '/home', icon: Home },
+    { name: 'Active Chat', href: '/chat', icon: MessageSquarePlus },
+    { name: 'History', href: '/chats', icon: MessageSquare },
     { name: 'Trips', href: '/trips', icon: Briefcase },
     { name: 'Explore', href: '/explore', icon: Compass },
     { name: 'Profile', href: '/profile', icon: User },
@@ -25,8 +27,8 @@ export function BottomNav() {
             pathname === tab.href || pathname.startsWith(tab.href + '/')
         );
         if (activeIndex !== -1) {
-            // Each tab is 25% wide (4 tabs), center the 3rem indicator
-            const tabWidth = 25; // percentage
+            // Dynamic tab width based on number of tabs
+            const tabWidth = 100 / tabs.length; // percentage
             const indicatorWidth = 3; // rem, converted to percentage later
             setIndicatorLeft(activeIndex * tabWidth + (tabWidth / 2));
         }
@@ -36,7 +38,7 @@ export function BottomNav() {
         <>
             {/* Floating New Trip Button */}
             {showNewTripButton && (
-                <Link href="/chat">
+                <Link href="/chat?new=true">
                     <button
                         className="floating-btn btn-scale fixed bottom-20 right-4 z-50 w-14 h-14 rounded-full flex items-center justify-center shadow-lg"
                         style={{

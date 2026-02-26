@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Request, Header
 from typing import Optional
 import hmac
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from app.core.config import settings
 from app.db.mongo import MongoDB
 import structlog
@@ -55,7 +55,7 @@ async def razorpay_webhook(
     # Get raw body for signature verification
     body = await request.body()
     
-    # Verify signature (skip in development if no webhook secret)
+    # Verify webhook signature
     webhook_secret = getattr(settings, 'razorpay_webhook_secret', None)
     if webhook_secret and x_razorpay_signature:
         is_valid = await verify_razorpay_signature(
@@ -66,6 +66,10 @@ async def razorpay_webhook(
         if not is_valid:
             logger.error("Invalid webhook signature")
             raise HTTPException(status_code=400, detail="Invalid signature")
+    elif settings.app_env != "development":
+        # In production, signature verification is mandatory
+        logger.error("Webhook signature verification skipped — missing secret or signature in production")
+        raise HTTPException(status_code=400, detail="Webhook signature required in production")
     
     # Parse event
     event_data = await request.json()
@@ -109,7 +113,7 @@ async def handle_payment_captured(payload: dict):
     
     logger.info(f"Payment captured: {payment_id} for order: {order_id}")
     
-    db = MongoDB.get_database()
+    db = MongoDB.get_db()
     users_collection = db["users"]
     payments_collection = db["payments"]
     
@@ -120,7 +124,7 @@ async def handle_payment_captured(payload: dict):
             "$set": {
                 "payment_id": payment_id,
                 "status": "captured",
-                "captured_at": datetime.utcnow(),
+                "captured_at": datetime.now(timezone.utc),
                 "amount": amount
             }
         },
@@ -130,12 +134,12 @@ async def handle_payment_captured(payload: dict):
     # Update user subscription
     if user_id:
         await users_collection.update_one(
-            {"uid": user_id},
+            {"firebase_id": user_id},
             {
                 "$set": {
                     "subscription_tier": tier,
                     "subscription_status": "active",
-                    "subscription_updated_at": datetime.utcnow()
+                    "subscription_updated_at": datetime.now(timezone.utc)
                 }
             }
         )
@@ -152,7 +156,7 @@ async def handle_payment_failed(payload: dict):
     
     logger.warning(f"Payment failed: {payment_id}, Error: {error_code} - {error_description}")
     
-    db = MongoDB.get_database()
+    db = MongoDB.get_db()
     payments_collection = db["payments"]
     
     # Update payment record
@@ -162,7 +166,7 @@ async def handle_payment_failed(payload: dict):
             "$set": {
                 "payment_id": payment_id,
                 "status": "failed",
-                "failed_at": datetime.utcnow(),
+                "failed_at": datetime.now(timezone.utc),
                 "error_code": error_code,
                 "error_description": error_description
             }
@@ -179,7 +183,7 @@ async def handle_payment_authorized(payload: dict):
     
     logger.info(f"Payment authorized: {payment_id}")
     
-    db = MongoDB.get_database()
+    db = MongoDB.get_db()
     payments_collection = db["payments"]
     
     await payments_collection.update_one(
@@ -188,7 +192,7 @@ async def handle_payment_authorized(payload: dict):
             "$set": {
                 "payment_id": payment_id,
                 "status": "authorized",
-                "authorized_at": datetime.utcnow()
+                "authorized_at": datetime.now(timezone.utc)
             }
         },
         upsert=True
@@ -202,7 +206,7 @@ async def handle_order_paid(payload: dict):
     
     logger.info(f"Order paid: {order_id}")
     
-    db = MongoDB.get_database()
+    db = MongoDB.get_db()
     payments_collection = db["payments"]
     
     await payments_collection.update_one(
@@ -210,7 +214,7 @@ async def handle_order_paid(payload: dict):
         {
             "$set": {
                 "status": "paid",
-                "paid_at": datetime.utcnow()
+                "paid_at": datetime.now(timezone.utc)
             }
         },
         upsert=True
@@ -226,7 +230,7 @@ async def handle_refund_created(payload: dict):
     
     logger.info(f"Refund created: {refund_id} for payment: {payment_id}")
     
-    db = MongoDB.get_database()
+    db = MongoDB.get_db()
     payments_collection = db["payments"]
     
     await payments_collection.update_one(
@@ -236,7 +240,7 @@ async def handle_refund_created(payload: dict):
                 "refund_id": refund_id,
                 "refund_amount": amount,
                 "refund_status": "processed",
-                "refunded_at": datetime.utcnow()
+                "refunded_at": datetime.now(timezone.utc)
             }
         }
     )
@@ -244,13 +248,13 @@ async def handle_refund_created(payload: dict):
 
 async def log_webhook_error(event_type: str, event_data: dict, error: str):
     """Log webhook processing errors for manual review"""
-    db = MongoDB.get_database()
+    db = MongoDB.get_db()
     webhook_errors = db["webhook_errors"]
     
     await webhook_errors.insert_one({
         "event_type": event_type,
         "event_data": event_data,
         "error": error,
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
         "resolved": False
     })

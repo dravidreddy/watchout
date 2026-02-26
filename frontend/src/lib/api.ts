@@ -2,7 +2,7 @@ import { getIdToken } from './firebase';
 import { getFriendlyErrorMessage } from './apiErrorHandler';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
-console.log('DEBUG: API_BASE_URL is', API_BASE_URL);
+
 
 async function getAuthHeaders(): Promise<HeadersInit> {
     const token = await getIdToken();
@@ -14,8 +14,13 @@ async function getAuthHeaders(): Promise<HeadersInit> {
         console.warn('⚠️ USING DEV BYPASS TOKEN - THIS SHOULD NOT HAPPEN IN PRODUCTION ⚠️');
     }
 
+    const timezoneOffset = new Date().getTimezoneOffset().toString();
+    const timezoneId = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
     return {
         'Content-Type': 'application/json',
+        'X-Timezone-Offset': timezoneOffset,
+        'X-Timezone-Id': timezoneId,
         ...(isDevBypass ? { 'X-Test-Bypass-Token': process.env.NEXT_PUBLIC_DEV_BYPASS as string } : {}),
         ...(token ? { 'Authorization': `Bearer ${token}` } : {})
     };
@@ -99,101 +104,147 @@ export async function apiRequest<T>(
 export async function streamRequest(
     endpoint: string,
     body: object,
-    onEvent: (event: StreamEvent) => void
+    onEvent: (event: StreamEvent) => void,
+    signal?: AbortSignal,       // FE1: support external AbortController
+    maxRetries: number = 3,     // FE1: max reconnect attempts on network/5xx errors
 ): Promise<void> {
-    // Sentence buffer to reduce layout shifts (CLS optimization)
-    let sentenceBuffer = '';
+    let attempt = 0;
 
-    try {
-        const headers = await getAuthHeaders();
-
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(body)
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ detail: response.statusText }));
-            const apiError = new ApiError(response.status, errorData.detail || 'Stream request failed');
-            throw apiError;
+    while (true) {
+        // FE1: exponential back-off — 0ms for first attempt, then 1s → 2s → 4s … max 30s
+        if (attempt > 0) {
+            const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 30_000);
+            await new Promise<void>((resolve, reject) => {
+                const id = setTimeout(resolve, delayMs);
+                signal?.addEventListener('abort', () => {
+                    clearTimeout(id);
+                    reject(new DOMException('Aborted', 'AbortError'));
+                }, { once: true });
+            });
         }
 
-        const reader = response.body?.getReader();
-        const decoder = new TextDecoder();
+        // Bail immediately if the caller aborted
+        if (signal?.aborted) return;
 
-        if (!reader) return;
+        // Sentence buffer to reduce layout shifts (CLS optimization)
+        let sentenceBuffer = '';
 
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) {
-                // Flush remaining buffer on stream end
-                if (sentenceBuffer.trim()) {
-                    onEvent({ type: 'token', content: sentenceBuffer });
-                    sentenceBuffer = '';
-                }
-                break;
+        try {
+            const headers = await getAuthHeaders();
+
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(body),
+                signal,
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+                // FE3: Preserve 422 field-level error details so forms can surface them
+                const message = response.status === 422
+                    ? JSON.stringify(errorData.detail ?? errorData)
+                    : (errorData.detail || errorData.message || 'Stream request failed');
+                throw new ApiError(response.status, message);
             }
 
-            const chunk = decoder.decode(value);
-            const lines = chunk.split('\n');
+            const reader = response.body?.getReader();
+            const decoder = new TextDecoder();
 
-            for (const line of lines) {
-                // Skip heartbeat comments (for Priority 2)
-                if (line.startsWith(':')) {
-                    continue;
+            if (!reader) return;
+
+            // Buffer for partial SSE lines split across TCP chunks
+            let lineBuffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    // Flush remaining buffer on stream end
+                    if (sentenceBuffer.trim()) {
+                        onEvent({ type: 'token', content: sentenceBuffer });
+                        sentenceBuffer = '';
+                    }
+                    return;  // success — exits the retry loop
                 }
 
-                if (line.startsWith('data: ')) {
-                    const data = line.slice(6);
-                    if (data === '[DONE]') {
-                        // Flush buffer before completing
-                        if (sentenceBuffer.trim()) {
-                            onEvent({ type: 'token', content: sentenceBuffer });
-                            sentenceBuffer = '';
-                        }
-                        return;
+                const chunk = decoder.decode(value, { stream: true });
+                // Prepend any leftover partial line from previous read
+                const combined = lineBuffer + chunk;
+                const lines = combined.split('\n');
+                // Last element may be an incomplete line — save for next iteration
+                lineBuffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    // Skip heartbeat comments (AR6 backend keepalive pings)
+                    if (line.startsWith(':')) {
+                        continue;
                     }
 
-                    try {
-                        const event = JSON.parse(data) as StreamEvent;
-
-                        // Apply sentence buffering ONLY to token events
-                        if (event.type === 'token' && event.content) {
-                            sentenceBuffer += event.content;
-
-                            // Flush on sentence boundaries OR if buffer gets too long
-                            const hasSentenceEnd = /[.!?]\s/.test(sentenceBuffer);
-                            const bufferTooLong = sentenceBuffer.length > 200;
-
-                            if (hasSentenceEnd || bufferTooLong) {
-                                onEvent({ type: 'token', content: sentenceBuffer });
-                                sentenceBuffer = '';
-                            }
-                        } else {
-                            // For non-token events, flush buffer first, then pass event
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6);
+                        if (data === '[DONE]') {
+                            // Flush buffer before completing
                             if (sentenceBuffer.trim()) {
                                 onEvent({ type: 'token', content: sentenceBuffer });
                                 sentenceBuffer = '';
                             }
-                            onEvent(event);
+                            return;
                         }
-                    } catch {
-                        // Ignore parse errors
+
+                        try {
+                            const event = JSON.parse(data) as StreamEvent;
+
+                            // Apply sentence buffering ONLY to token events
+                            if (event.type === 'token' && event.content) {
+                                sentenceBuffer += event.content;
+
+                                // Flush on sentence boundaries OR if buffer gets too long
+                                const hasSentenceEnd = /[.!?]\s/.test(sentenceBuffer);
+                                const bufferTooLong = sentenceBuffer.length > 200;
+
+                                if (hasSentenceEnd || bufferTooLong) {
+                                    onEvent({ type: 'token', content: sentenceBuffer });
+                                    sentenceBuffer = '';
+                                }
+                            } else {
+                                // For non-token events, flush buffer first, then pass event
+                                if (sentenceBuffer.trim()) {
+                                    onEvent({ type: 'token', content: sentenceBuffer });
+                                    sentenceBuffer = '';
+                                }
+                                onEvent(event);
+                            }
+                        } catch {
+                            // Ignore parse errors for individual SSE lines
+                        }
                     }
                 }
             }
-        }
-    } catch (error: any) {
-        // Flush buffer on error
-        if (sentenceBuffer.trim()) {
-            onEvent({ type: 'token', content: sentenceBuffer });
-        }
 
-        if (!(error instanceof ApiError)) {
-            error.friendlyMessage = getFriendlyErrorMessage(error);
+        } catch (error: any) {
+            // Flush buffer on error
+            if (sentenceBuffer.trim()) {
+                onEvent({ type: 'token', content: sentenceBuffer });
+            }
+
+            // User aborted intentionally — stop immediately, no retry
+            if (error?.name === 'AbortError') return;
+
+            // 4xx errors are non-retriable (bad request / auth / validation)
+            if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+                throw error;
+            }
+
+            // FE1: Network/5xx error — retry if we have attempts left
+            attempt++;
+            if (attempt > maxRetries) {
+                if (!(error instanceof ApiError)) {
+                    error.friendlyMessage = getFriendlyErrorMessage(error);
+                }
+                throw error;
+            }
+            // else: loop back for retry with back-off
         }
-        throw error;
     }
 }
 
@@ -214,7 +265,6 @@ export interface StreamEvent {
 
 // API endpoints
 export const api = {
-    // Auth
     // Auth
     login: (data: { firebase_id: string; email: string; name?: string; photo_url?: string }) =>
         apiRequest<UserProfile>('/auth/login', {
@@ -254,7 +304,7 @@ export const api = {
     getTrip: (tripId: string) => apiRequest<Trip>(`/trips/${tripId}`),
 
     updateTrip: (tripId: string, data: Partial<Trip>) =>
-        apiRequest<{ status: string }>(`/trips/${tripId}`, {
+        apiRequest<{ status: string; sharing_id?: string }>(`/trips/${tripId}`, {
             method: 'PUT',
             body: JSON.stringify(data)
         }),
@@ -297,10 +347,12 @@ export const api = {
     listConversations: () =>
         apiRequest<any[]>('/chat/conversations'),
 
-    saveConversationAsTrip: (tripId: string, tripData: TripCreate) =>
-        apiRequest<{ trip_id: string; status: string }>(`/chat/conversations/${tripId}/save-as-trip`, {
-            method: 'POST',
-            body: JSON.stringify(tripData)
+    getTripMessages: (tripId: string) =>
+        apiRequest<any[]>(`/chat/conversations/${tripId}/messages`),
+
+    saveConversationAsTrip: (tripId: string) =>
+        apiRequest<{ status: string; trip_id: string }>(`/chat/conversations/${tripId}/save-as-trip`, {
+            method: 'POST'
         }),
 
     deleteConversation: (tripId: string) =>
@@ -311,9 +363,21 @@ export const api = {
             method: 'POST'
         }),
 
+    deleteMessage: (tripId: string, messageId: string) =>
+        apiRequest<{ status: string }>(`/chat/conversations/${tripId}/messages/${messageId}`, {
+            method: 'DELETE'
+        }),
+
+    editMessage: (tripId: string, messageId: string, content: string) =>
+        apiRequest<{ status: string; content: string }>(`/chat/conversations/${tripId}/messages/${messageId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ content }),
+        }),
+
+
     // Payments
-    createOrder: (amount: number) =>
-        apiRequest<any>('/payments/create-order?amount=' + amount, { method: 'POST' }),
+    createOrder: (tier: string = 'premium') =>
+        apiRequest<any>('/payments/create-order?tier=' + encodeURIComponent(tier), { method: 'POST' }),
 
     verifyPayment: (data: any) =>
         apiRequest<{ status: string; tier: string }>('/payments/verify', {
@@ -357,20 +421,26 @@ export interface UserPreferences {
     budget_range?: string;
     food_preferences?: string[];
     interests?: string[];
+    language?: string;
+    current_mood?: string;
+    travel_vibe?: string[];
 }
 
 export interface Trip {
     _id: string;
+    trip_id?: string;      // UUID used by the chat system (may differ from _id)
     user_id: string;
     title: string;
     cities: string[];
+    city?: string;         // single-city alias
     start_date?: string;
     end_date?: string;
     num_days?: number;
+    duration_days?: number; // alias
     num_travelers: number;
     budget_total?: number;
     status: string;
-    itinerary?: Itinerary;
+    itinerary?: any;       // full assembled itinerary object from orchestrator
     category?: string;
     tags: string[];
     is_public: boolean;
@@ -378,6 +448,7 @@ export interface Trip {
     created_at: string;
     updated_at: string;
 }
+
 
 export interface TripCreate {
     title?: string;
@@ -403,17 +474,24 @@ export interface Itinerary {
 export interface DayPlan {
     day_number: number;
     city: string;
-    activities: Activity[];
+    stops: ActivityStop[];
     notes?: string;
 }
 
-export interface Activity {
+export interface ActivityStop {
     time?: string;
     name: string;
     description?: string;
     duration_minutes?: number;
     category?: string;
     estimated_cost?: number;
+    address?: string;
+    latitude?: number;
+    longitude?: number;
+    arrival_time?: string;
+    departure_time?: string;
+    rating?: number;
+    photo_url?: string;
 }
 
 export interface Place {
@@ -449,3 +527,17 @@ export interface PlacePrediction {
     description: string;
     main_text?: string;
 }
+
+export interface ScreenshotAnalyzeResponse {
+    status: string;
+    detected_location?: string;
+    context?: string;
+    error?: string;
+}
+
+export const analyzeScreenshot = async (imageBase64: string): Promise<ScreenshotAnalyzeResponse> => {
+    return apiRequest<ScreenshotAnalyzeResponse>('/tools/analyze-screenshot', {
+        method: 'POST',
+        body: JSON.stringify({ image_base64: imageBase64 }),
+    });
+};

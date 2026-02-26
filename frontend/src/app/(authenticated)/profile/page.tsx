@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { CityAutocomplete } from '@/components/ui/CityAutocomplete';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, User, MapPin, Bell, Palette, Shield, LogOut, ChevronRight, Camera, CreditCard, Plane, Mountain, Wallet, Moon, Sun, Monitor } from 'lucide-react';
+import { X, User, MapPin, Bell, Palette, Shield, LogOut, ChevronRight, Camera, CreditCard, Plane, Mountain, Wallet, Moon, Sun, Monitor, MessageSquare } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import Link from 'next/link';
 import { api } from '@/lib/api';
@@ -16,10 +16,14 @@ const travelStyles = ['Adventure', 'Relaxation', 'Cultural', 'Family', 'Budget',
 // Budget ranges
 const budgetRanges = ['Budget', 'Mid-range', 'Luxury'];
 
+// Languages
+const languages = ['English', 'Hindi', 'Spanish', 'French', 'German'];
+
 export default function ProfilePage() {
     const { user, setUser, logout, isLoading } = useAuth();
     const [selectedStyle, setSelectedStyle] = useState(user?.preferences?.travel_style || 'Adventure');
     const [selectedBudget, setSelectedBudget] = useState(user?.preferences?.budget_range || 'Mid-range');
+    const [selectedLanguage, setSelectedLanguage] = useState(user?.preferences?.language || 'English');
     const { theme, setTheme } = useTheme();
     const [isSaving, setIsSaving] = useState(false);
     const [isHomeCityModalOpen, setIsHomeCityModalOpen] = useState(false);
@@ -38,6 +42,7 @@ export default function ProfilePage() {
         // Optimistic update
         if (key === 'travel_style') setSelectedStyle(value);
         if (key === 'budget_range') setSelectedBudget(value);
+        if (key === 'language') setSelectedLanguage(value);
 
         try {
             setIsSaving(true);
@@ -185,6 +190,29 @@ export default function ProfilePage() {
                             </div>
                         </div>
 
+                        {/* AI Language */}
+                        <div className="mb-6">
+                            <label className="flex items-center gap-2 text-sm font-medium mb-3" style={{ color: 'var(--text-secondary)' }}>
+                                <MessageSquare className="w-4 h-4" />
+                                AI Language
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                                {languages.map((lang) => (
+                                    <button
+                                        key={lang}
+                                        onClick={() => updatePreference('language', lang)}
+                                        className="px-4 py-2 rounded-full text-sm font-medium transition-all"
+                                        style={{
+                                            background: selectedLanguage === lang ? 'var(--accent)' : 'var(--bg-tertiary)',
+                                            color: selectedLanguage === lang ? 'white' : 'var(--text-secondary)'
+                                        }}
+                                    >
+                                        {lang}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
                         {/* Budget Range */}
                         <div>
                             <label className="flex items-center gap-2 text-sm font-medium mb-3" style={{ color: 'var(--text-secondary)' }}>
@@ -291,7 +319,7 @@ export default function ProfilePage() {
 
                 {/* Version */}
                 <p className="text-center text-sm mt-8" style={{ color: 'var(--text-tertiary)' }}>
-                    Bharat Voyager v1.0.0
+                    Watchout v1.0.0
                 </p>
             </div>
 

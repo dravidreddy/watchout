@@ -71,7 +71,7 @@ export default function PWAInstallBanner() {
                         ✈️
                     </div>
                     <div>
-                        <h3 className="font-bold text-lg">Install Bharat Voyager</h3>
+                        <h3 className="font-bold text-lg">Install Watchout</h3>
                         <p className="text-sm text-blue-100">Quick access & offline support</p>
                     </div>
                 </div>

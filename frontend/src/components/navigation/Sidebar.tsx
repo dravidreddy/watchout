@@ -2,11 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Briefcase, Compass, User, HelpCircle, Plus } from 'lucide-react';
+import { Home, Briefcase, Compass, User, HelpCircle, Plus, MessageSquare, MessageSquarePlus } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const navItems = [
     { name: 'Home', href: '/home', icon: Home },
+    { name: 'Active Chat', href: '/chat', icon: MessageSquarePlus },
+    { name: 'History', href: '/chats', icon: MessageSquare },
     { name: 'Trips', href: '/trips', icon: Briefcase },
     { name: 'Explore', href: '/explore', icon: Compass },
     { name: 'Profile', href: '/profile', icon: User },
@@ -27,8 +29,8 @@ export function Sidebar() {
                 <motion.div
                     whileHover={{ x: 4 }}
                     className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all cursor-pointer ${isActive
-                            ? 'bg-[var(--accent-50)]'
-                            : 'hover:bg-[var(--bg-tertiary)]'
+                        ? 'bg-[var(--accent-50)]'
+                        : 'hover:bg-[var(--bg-tertiary)]'
                         }`}
                 >
                     <item.icon
@@ -78,7 +80,7 @@ export function Sidebar() {
                     </div>
                     <div>
                         <h1 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                            Bharat Voyager
+                            Watchout
                         </h1>
                         <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
                             AI Travel Planner
@@ -89,7 +91,7 @@ export function Sidebar() {
 
             {/* New Trip Button */}
             <div className="px-4 mb-6">
-                <Link href="/chat">
+                <Link href="/chat?new=true">
                     <motion.button
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}

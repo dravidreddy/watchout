@@ -3,6 +3,9 @@ Watchout Backend - Serper Search API Tool (Fallback)
 """
 import httpx
 from typing import Optional, List, Dict, Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.core.config import settings
 
@@ -72,7 +75,7 @@ class SerperSearchTool:
             }
             
         except Exception as e:
-            print(f"Serper search error: {e}")
+            logger.warning("Serper search error: %s", e)
             return None
     
     async def search_places(
@@ -126,7 +129,7 @@ class SerperSearchTool:
             }
             
         except Exception as e:
-            print(f"Serper places error: {e}")
+            logger.warning("Serper places error: %s", e)
             return None
     
     async def search_images(
@@ -174,7 +177,7 @@ class SerperSearchTool:
             ]
             
         except Exception as e:
-            print(f"Serper images error: {e}")
+            logger.warning("Serper images error: %s", e)
             return None
     
     async def close(self):

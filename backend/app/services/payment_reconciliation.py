@@ -4,7 +4,7 @@ Handles stuck/orphaned payments due to webhook failures or network issues
 Runs daily at 2 AM IST to reconcile payments stuck in 'authorized' state
 """
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any
 import razorpay
 from app.db.mongo import MongoDB
@@ -22,11 +22,11 @@ async def reconcile_stuck_payments():
     This prevents "ghost bookings" where users pay but don't get premium tier
     due to webhook failures or network issues.
     """
-    db = MongoDB.get_database()
+    db = MongoDB.get_db()
     payments_collection = db["payments"]
     
     # Find payments stuck for more than 24 hours
-    cutoff = datetime.utcnow() - timedelta(hours=24)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     stuck_payments = await payments_collection.find({
         "status": {"$in": ["authorized", "created"]},
         "created_at": {"$lt": cutoff}
@@ -76,7 +76,7 @@ async def reconcile_stuck_payments():
                     {
                         "$set": {
                             "status": "failed",
-                            "reconciled_at": datetime.utcnow(),
+                            "reconciled_at": datetime.now(timezone.utc),
                             "error_description": razorpay_payment.get("error_description", "Unknown error")
                         }
                     }
@@ -91,7 +91,7 @@ async def reconcile_stuck_payments():
                     {
                         "$set": {
                             "status": "refunded",
-                            "reconciled_at": datetime.utcnow()
+                            "reconciled_at": datetime.now(timezone.utc)
                         }
                     }
                 )

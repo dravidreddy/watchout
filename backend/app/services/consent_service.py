@@ -2,7 +2,7 @@
 Consent Service for DPDP Act Compliance
 Handles consent recording, retrieval, and withdrawal.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorCollection
 
@@ -16,7 +16,7 @@ class ConsentService:
     @staticmethod
     def get_collection() -> AsyncIOMotorCollection:
         """Get the consents collection."""
-        db = MongoDB.get_database()
+        db = MongoDB.get_db()
         return db["user_consents"]
     
     @staticmethod
@@ -49,7 +49,7 @@ class ConsentService:
             "purpose": purpose,
             "purpose_version": purpose_version,
             "consented": consented,
-            "consent_timestamp": datetime.utcnow(),
+            "consent_timestamp": datetime.now(timezone.utc),
             "ip_address": ip_address,
             "user_agent": user_agent,
             "withdrawal_timestamp": None
@@ -133,7 +133,7 @@ class ConsentService:
                 "withdrawal_timestamp": None
             },
             {
-                "$set": {"withdrawal_timestamp": datetime.utcnow()}
+                "$set": {"withdrawal_timestamp": datetime.now(timezone.utc)}
             }
         )
         

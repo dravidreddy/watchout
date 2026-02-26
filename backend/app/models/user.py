@@ -48,6 +48,12 @@ class UserPreferences(BaseModel):
         description="Preference: beach, mountain, or both"
     )
     
+    # Language
+    language: Optional[str] = Field(
+        default="English",
+        description="Preferred language for AI responses"
+    )
+    
     # Travel style
     travel_style: Optional[TravelStyle] = None
     travel_vibe: Optional[List[TravelVibe]] = Field(default_factory=list)
@@ -134,6 +140,7 @@ class UserUpdate(BaseModel):
     home_city: Optional[str] = None
     preferences: Optional[UserPreferences] = None
     onboarding_completed: Optional[bool] = None
+    subscription_tier: Optional[str] = None
 
 
 class UserResponse(BaseModel):

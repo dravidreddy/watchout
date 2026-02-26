@@ -4,6 +4,9 @@ Watchout Backend - MongoDB Connection
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from typing import Optional
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 import certifi
 
 from app.core.config import settings
@@ -34,14 +37,15 @@ class MongoDB:
             await cls.client.admin.command("ping")
             
             cls.db = cls.client[settings.mongodb_db_name]
-            print(f"Connected to MongoDB: {settings.mongodb_db_name}")
+            logger.info("Connected to MongoDB: %s", settings.mongodb_db_name)
             
             # Create indexes
             await cls._create_indexes()
             
         except Exception as e:
-            print(f"Failed to connect to MongoDB: {e}")
-            raise
+            logger.error("Failed to connect to MongoDB: %s", e)
+            import sys
+            sys.exit(1)
     
     @classmethod
     async def disconnect(cls) -> None:
@@ -50,7 +54,7 @@ class MongoDB:
             cls.client.close()
             cls.client = None
             cls.db = None
-            print("Disconnected from MongoDB")
+            logger.info("Disconnected from MongoDB")
     
     @classmethod
     async def _create_indexes(cls) -> None:
@@ -74,13 +78,37 @@ class MongoDB:
             ("cities", "text")
         ])
         
-        # Conversations collection indexes
-        await cls.db.conversations.create_index("trip_id")
-        await cls.db.conversations.create_index([("trip_id", 1), ("timestamp", -1)])
+        # Messages collection indexes (Chat History)
+        await cls.db.messages.create_index("trip_id")
+        await cls.db.messages.create_index([("trip_id", 1), ("created_at", -1)])
+        
+        # Conversations collection indexes (Legacy/Unused?)
+        # await cls.db.conversations.create_index("trip_id")
+        # await cls.db.conversations.create_index([("trip_id", 1), ("timestamp", -1)])
         
         # Memory collection indexes (for vector search)
         await cls.db.memories.create_index("user_id")
         await cls.db.memories.create_index([("user_id", 1), ("type", 1)])
+        # Text index on memories.content — required for the $text-based _fallback_search
+        # (replaces the $regex approach that was vulnerable to ReDoS)
+        await cls.db.memories.create_index(
+            [("content", "text")],
+            default_language="english",
+            background=True,
+        )
+
+        # Compound index for IDOR-fixed message queries (trip_id + user_id)
+        await cls.db.messages.create_index([("trip_id", 1), ("user_id", 1), ("created_at", -1)])
+
+        # TTL index — messages expire 90 days after last_accessed_at.
+        # Each conversation open refreshes last_accessed_at, so the clock resets on every visit.
+        # A conversation untouched for 90 days is automatically deleted.
+        await cls.db.messages.create_index(
+            "last_accessed_at",
+            expireAfterSeconds=7_776_000,  # 90 days = 90 × 24 × 3600
+            name="messages_ttl_90d",
+            sparse=True,                   # skip docs that don't have this field yet
+        )
         
         # Places cache with TTL (expires after 24 hours)
         await cls.db.places_cache.create_index("place_id", unique=True)
@@ -93,7 +121,10 @@ class MongoDB:
         await cls.db.payments.create_index("user_id")
         await cls.db.payments.create_index("razorpay_order_id", unique=True, sparse=True)
         
-        print("Database indexes created successfully")
+        # Sharing collection — unique index for shared trip lookups
+        await cls.db.trips.create_index("sharing_id", unique=True, sparse=True)
+        
+        logger.info("Database indexes created successfully")
     
     @classmethod
     def get_db(cls) -> AsyncIOMotorDatabase:

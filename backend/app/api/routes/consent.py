@@ -2,7 +2,7 @@
 Consent API Routes for DPDP Act Compliance
 """
 from fastapi import APIRouter, Depends, Request, HTTPException
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.core.firebase_auth import verify_firebase_token
 from app.models.consent import (
@@ -49,7 +49,7 @@ async def record_consent(
     
     return ConsentResponse(
         status="recorded",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         purposes_recorded=purposes_recorded
     )
 
@@ -71,7 +71,7 @@ async def get_consent_status(
     return UserConsents(
         user_id=user_id,
         consents=consents,
-        last_updated=datetime.utcnow()
+        last_updated=datetime.now(timezone.utc)
     )
 
 
@@ -104,7 +104,7 @@ async def withdraw_consent(
     return {
         "status": "withdrawn",
         "purpose": withdrawal_req.purpose,
-        "timestamp": datetime.utcnow()
+        "timestamp": datetime.now(timezone.utc)
     }
 
 

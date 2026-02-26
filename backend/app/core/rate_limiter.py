@@ -1,5 +1,5 @@
 """
-Rate Limiting Configuration for Bharat Voyager API
+Rate Limiting Configuration for Watchout API
 Uses SlowAPI for per-endpoint rate limiting to prevent abuse.
 """
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -9,6 +9,8 @@ from fastapi import Request, FastAPI
 from fastapi.responses import JSONResponse
 from typing import Callable
 import logging
+
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +28,24 @@ def get_user_identifier(request: Request) -> str:
     return f"ip:{get_remote_address(request)}"
 
 
+# Use Redis if configured, otherwise fall back to in-memory.
+# NOTE: memory:// is single-instance only — enforce Redis in production via REDIS_URL env var.
+_storage_uri = settings.redis_url if settings.redis_url else "memory://"
+if not settings.redis_url:
+    logger.warning(
+        "REDIS_URL not set — rate limiter running in memory://. "
+        "Limits are NOT shared across multiple server instances (AU3)."
+    )
+else:
+    logger.info("Rate limiter storage: Redis (AU3 ✓)")
+
 # Initialize rate limiter
 limiter = Limiter(
     key_func=get_user_identifier,
-    default_limits=["200/hour", "50/minute"],  # Conservative defaults
-    storage_uri="memory://",  # Use in-memory for start, switch to Redis for production
-    strategy="fixed-window",
-    headers_enabled=True,  # Add rate limit headers to responses
+    default_limits=["200/hour", "50/minute"],
+    storage_uri=_storage_uri,
+    strategy="moving-window",   # AU4: moving-window prevents burst gaming at window boundaries
+    headers_enabled=True,       # Expose X-RateLimit-* headers to clients
 )
 
 

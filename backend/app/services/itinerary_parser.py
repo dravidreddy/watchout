@@ -4,7 +4,10 @@ Extracts structured itinerary data from conversation history.
 """
 from typing import Dict, Any, Optional, List
 import json
+import logging
 from app.agents.base import BaseAgent
+
+logger = logging.getLogger(__name__)
 from app.services.conversation_manager import conversation_manager
 
 
@@ -88,7 +91,7 @@ If the user just started and hasn't fixed anything, return the best guess based 
             result = await self.generate_structured(prompt, schema)
             return result
         except Exception as e:
-            print(f"Error in ItineraryParser: {e}")
+            logger.warning("Error in ItineraryParser: %s", e)
             return None
 
     async def run(self, user_input: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

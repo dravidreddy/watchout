@@ -3,6 +3,9 @@ Watchout Backend - Mapbox Directions API Tool
 """
 import httpx
 from typing import Optional, List, Dict, Any, Tuple
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.core.config import settings
 
@@ -79,7 +82,7 @@ class MapboxTool:
             }
             
         except Exception as e:
-            print(f"Mapbox directions error: {e}")
+            logger.warning("Mapbox directions error: %s", e)
             return None
     
     async def get_route_for_day(
@@ -151,7 +154,7 @@ class MapboxTool:
             }
             
         except Exception as e:
-            print(f"Mapbox route error: {e}")
+            logger.warning("Mapbox route error: %s", e)
             return None
     
     async def geocode(
@@ -201,7 +204,7 @@ class MapboxTool:
             ]
             
         except Exception as e:
-            print(f"Mapbox geocoding error: {e}")
+            logger.warning("Mapbox geocoding error: %s", e)
             return []
     
     async def reverse_geocode(
@@ -255,7 +258,7 @@ class MapboxTool:
             }
             
         except Exception as e:
-            print(f"Mapbox reverse geocoding error: {e}")
+            logger.warning("Mapbox reverse geocoding error: %s", e)
             return None
     
     def _parse_steps(self, legs: List[Dict]) -> List[Dict[str, Any]]:

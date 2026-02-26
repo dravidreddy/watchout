@@ -3,7 +3,10 @@ Watchout Backend - Google Places API Tool
 """
 import httpx
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.core.config import settings
 from app.db.mongo import places_cache_collection
@@ -63,7 +66,7 @@ class GooglePlacesTool:
             return self._parse_results(data.get("results", []))
             
         except Exception as e:
-            print(f"Google Places search error: {e}")
+            logger.warning("Google Places search error: %s", e)
             return []
     
     async def search_nearby(
@@ -111,7 +114,7 @@ class GooglePlacesTool:
             return self._parse_results(data.get("results", []))
             
         except Exception as e:
-            print(f"Google Places nearby search error: {e}")
+            logger.warning("Google Places nearby search error: %s", e)
             return []
     
     async def get_place_details(
@@ -167,13 +170,13 @@ class GooglePlacesTool:
             await cache.insert_one({
                 "place_id": place_id,
                 "details": parsed,
-                "cached_at": datetime.utcnow()
+                "cached_at": datetime.now(timezone.utc)
             })
             
             return parsed
             
         except Exception as e:
-            print(f"Google Places details error: {e}")
+            logger.warning("Google Places details error: %s", e)
             return None
     
     async def autocomplete(
@@ -227,7 +230,7 @@ class GooglePlacesTool:
             ]
             
         except Exception as e:
-            print(f"Google Places autocomplete error: {e}")
+            logger.warning("Google Places autocomplete error: %s", e)
             return []
     
     def _parse_results(self, results: List[Dict]) -> List[Dict[str, Any]]:

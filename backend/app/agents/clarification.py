@@ -24,11 +24,8 @@ Key information to gather:
 - Number of travelers and who they are (solo, couple, family, friends)
 - Budget range (budget, mid-range, luxury)
 - Travel vibe (adventure, relaxation, cultural, party, romantic)
-- Any specific interests or must-see places
-- Food preferences (vegetarian, local cuisine, specific requirements)
-- Pace preference (packed schedule vs relaxed)
 
-Ask maximum 2-3 questions at a time. Be conversational and fun!""",
+Ask maximum 3 questions at a time. Be conversational and fun!""",
             model_type="main"  # Use main model for preference understanding
         )
         
@@ -39,6 +36,14 @@ Ask maximum 2-3 questions at a time. Be conversational and fun!""",
             "budget_range",
             "travel_vibe"
         ]
+        # Priority order — ask the most critical fields first; vibe is inferable and asked last
+        self.field_priority = [
+            "destinations",
+            "duration_days",
+            "num_travelers",
+            "budget_range",
+            "travel_vibe",
+        ]
     
     async def run(
         self,
@@ -47,24 +52,44 @@ Ask maximum 2-3 questions at a time. Be conversational and fun!""",
     ) -> Dict[str, Any]:
         """
         Process user input and extract/request travel preferences.
-        
-        Returns:
-            response: Conversational response
-            extracted: Any preferences extracted from the input
-            is_complete: Whether we have enough info to start planning
-            missing_fields: What info we still need
         """
         context = context or {}
-        current_prefs = context.get("extracted_preferences", {})
+        current_prefs = dict(context.get("preferences", {}) or {})
         conversation_history = context.get("conversation_history", [])
-        
+        missing_fields = list(context.get("missing_fields", []) or [])
+
+        # ── Pre-fill travel_vibe from current_mood if not yet set ──────────
+        # "current_mood" comes from the Home page mood pill (e.g. "spiritual").
+        # We treat it as the seed for travel_vibe so the agent never asks again.
+        if current_prefs.get("current_mood") and not current_prefs.get("travel_vibe"):
+            current_prefs["travel_vibe"] = [current_prefs["current_mood"]]
+
+        # ── Remove fields already satisfied in current_prefs ───────────────
+        # This prevents the LLM from asking questions we already know the answer to.
+        satisfied = {
+            "travel_vibe": bool(current_prefs.get("travel_vibe")),
+            "budget_range": bool(current_prefs.get("budget_range")),
+            "destinations": bool(current_prefs.get("destinations")),
+            "duration_days": current_prefs.get("duration_days") is not None,
+            "num_travelers": current_prefs.get("num_travelers") is not None,
+            "origin_city": bool(current_prefs.get("origin_city")),
+            "pace": bool(current_prefs.get("pace")),
+        }
+        effective_missing = [
+            f for f in (missing_fields or self.required_fields)
+            if not satisfied.get(f, False)
+        ]
+
         # Build extraction prompt with conversation history
-        extraction_prompt = self._build_extraction_prompt(user_input, current_prefs, conversation_history)
-        
+        extraction_prompt = self._build_extraction_prompt(
+            user_input, current_prefs, conversation_history, effective_missing
+        )
+
         schema = {
             "type": "object",
             "properties": {
-                "extracted": {
+                "assistant_message": {"type": "string"},
+                "preferences": {
                     "type": "object",
                     "properties": {
                         "destinations": {"type": "array", "items": {"type": "string"}},
@@ -73,178 +98,164 @@ Ask maximum 2-3 questions at a time. Be conversational and fun!""",
                         "start_date": {"type": "string"},
                         "end_date": {"type": "string"},
                         "num_travelers": {"type": "integer"},
-                        "traveler_type": {"type": "string"},
                         "budget_range": {"type": "string"},
-                        "daily_budget": {"type": "integer"},
                         "travel_vibe": {"type": "array", "items": {"type": "string"}},
-                        "interests": {"type": "array", "items": {"type": "string"}},
-                        "food_preferences": {"type": "array", "items": {"type": "string"}},
                         "pace": {"type": "string"},
-                        "transport_preferences": {"type": "array", "items": {"type": "string"}}
+                        "interests": {"type": "array", "items": {"type": "string"}},
+                        "city_segments": {
+                            "type": "array",
+                            "description": "Per-city breakdown for multi-city trips. Fill this when user mentions multiple destinations.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "city": {"type": "string"},
+                                    "days": {"type": "integer"},
+                                    "vibe": {"type": "array", "items": {"type": "string"}},
+                                    "arrives_from": {"type": "string"},
+                                    "transport_preference": {"type": "string"}
+                                },
+                                "required": ["city", "days"]
+                            }
+                        }
                     }
                 },
                 "is_complete": {"type": "boolean"},
-                "missing_fields": {"type": "array", "items": {"type": "string"}},
-                "follow_up_questions": {"type": "array", "items": {"type": "string"}}
-            }
+                "missing_fields": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": ["assistant_message", "preferences", "is_complete", "missing_fields"]
         }
-        
+
         result = await self.generate_structured(extraction_prompt, schema)
-        
+
         if result:
-            # Merge extracted preferences
-            extracted = result.get("extracted", {})
-            # Remove None values
+            # Merge extracted preferences — existing known prefs are never overwritten by None
+            extracted = result.get("preferences", {}) or {}
             extracted = {k: v for k, v in extracted.items() if v is not None}
             merged = {**current_prefs, **extracted}
-            
-            # Generate conversational response
-            response = await self._generate_response(
-                user_input,
-                merged,
-                result.get("follow_up_questions", []),
-                result.get("is_complete", False)
-            )
-            
+
+            # Re-compute missing based on what's now in merged (not just what the LLM said)
+            computed_missing = [
+                f for f in self.required_fields
+                if not merged.get(f)
+            ]
+
             return {
-                "response": response,
-                "extracted_preferences": merged,
-                "is_complete": result.get("is_complete", False),
-                "missing_fields": result.get("missing_fields", [])
+                "assistant_message": result.get("assistant_message", ""),
+                "preferences": merged,
+                "missing_fields": computed_missing,
+                "is_complete": len(computed_missing) == 0,
+
+                # Standardized output for Supervisor
+                "response": result.get("assistant_message", ""),
+                "data": {
+                    "preferences": merged,
+                    "missing_fields": computed_missing
+                },
+                "error": None
             }
-        
-        # Fallback to simple response
-        async for text in self.stream(user_input, context):
-            pass  # Just get the full response
-        
+
+        # Fallback
         return {
-            "response": "I'd love to help you plan your trip! Could you tell me where you'd like to go and for how long?",
-            "extracted_preferences": current_prefs,
+            "assistant_message": "I'd love to help you plan your trip! Could you tell me where you'd like to go and for how long?",
+            "preferences": current_prefs,
+            "missing_fields": self.required_fields,
             "is_complete": False,
-            "missing_fields": self.required_fields
+            "response": "Could you tell me where you'd like to go?",
+            "data": {},
+            "error": "Failed to generate structured response"
         }
     
+    def _prioritize_missing_fields(self, missing_fields: list) -> list:
+        """Return missing fields sorted by importance — destination first, vibe last."""
+        ordered = [f for f in self.field_priority if f in missing_fields]
+        others = [f for f in missing_fields if f not in self.field_priority]
+        return ordered + others
+
     def _build_extraction_prompt(
         self,
         user_input: str,
         current_prefs: Dict[str, Any],
-        conversation_history: Optional[List[Dict[str, Any]]] = None
+        conversation_history: Optional[List[Dict[str, Any]]] = None,
+        missing_fields: Optional[List[str]] = None
     ) -> str:
         """Build prompt for preference extraction."""
-        # Format conversation history
         history_text = ""
         if conversation_history:
-            recent = conversation_history[-6:]  # Last 6 messages for context
+            recent = conversation_history[-50:]
             history_lines = []
             for msg in recent:
                 role = msg.get("role", "user").upper()
-                content = msg.get("content", "")[:400]  # Truncate long messages
+                content = msg.get("content", "")[:400]
                 history_lines.append(f"{role}: {content}")
             history_text = "\n".join(history_lines)
-        
-        return f"""Analyze this conversation about travel planning and extract/update preferences.
 
-CONVERSATION HISTORY:
-{history_text if history_text else "No previous conversation."}
+        prioritized_missing = self._prioritize_missing_fields(missing_fields or self.required_fields)
+        destinations = current_prefs.get("destinations", [])
+        is_multi_city = isinstance(destinations, list) and len(destinations) > 1
 
-CURRENT USER MESSAGE: "{user_input}"
+        multi_city_section = ""
+        if is_multi_city:
+            multi_city_section = f"""
+<multi_city_instructions>
+The user wants to visit multiple cities: {', '.join(destinations)}.
+You MUST fill city_segments[] in the preferences output — one entry per city with:
+  - city: city name
+  - days: days to spend there (propose a natural split if user hasn't specified)
+  - vibe: activities/vibe for that city specifically
+  - arrives_from: previous city or origin city
+  - transport_preference: "flight" | "train" | "road" | "flexible"
 
-PREVIOUSLY EXTRACTED PREFERENCES: {current_prefs}
+Example day split guidance:
+- Propose a split proactively: "10 days for Goa + Coorg + Mysore — how about 4 in Goa, 3 in Coorg, 3 in Mysore?"
+- If user agrees, lock it in. If they adjust, update accordingly.
+- Once all cities have days confirmed, set is_complete = true.
+</multi_city_instructions>
+"""
 
-IMPORTANT INSTRUCTIONS:
-1. Pay close attention to the ENTIRE conversation history
-2. If the user corrects or changes any preference (like destination, dates, number of travelers), UPDATE it
-3. The user's latest message takes priority - if they say "Mangalore" not "Goa", use Mangalore
-4. Extract any NEW travel preferences mentioned
-5. Merge with existing preferences, replacing any that were corrected
+        return f"""<role>
+You are "Watchout" — a warm, curious Indian travel consultant having a natural conversation with a traveler.
+Your goal: understand what this person wants through genuine dialogue, NOT an interview or interrogation.
+</role>
 
-Minimum required for planning: destinations, duration, number of travelers, budget level, and travel vibe.
+<what_you_know_already>
+Full conversation so far:
+{history_text}
 
-If not complete, suggest 1-2 friendly follow-up questions to ask."""
-    
-    async def _generate_response(
-        self,
-        user_input: str,
-        preferences: Dict[str, Any],
-        questions: List[str],
-        is_complete: bool
-    ) -> str:
-        """Generate a well-structured, formatted conversational response."""
-        
-        if is_complete:
-            destinations = preferences.get("destinations", ["your destination"])
-            days = preferences.get("duration_days", "your trip")
-            dest_str = ', '.join(destinations) if isinstance(destinations, list) else destinations
-            vibe = preferences.get('travel_vibe', ['flexible'])
-            vibe_str = ', '.join(vibe) if isinstance(vibe, list) else vibe
-            
-            return f"""🎉 **Perfect! I have everything I need!**
+User just said: "{user_input}"
 
----
+Already captured from this conversation:
+{current_prefs}
 
-### 📋 Your Trip Summary
+Fields still needed (highest priority listed first):
+{prioritized_missing}
+</what_you_know_already>
+{multi_city_section}
+<how_to_respond>
+STEP 1 — EXTRACT DEEPLY:
+Read the ENTIRE conversation above. Update 'preferences' with anything the user mentioned, even indirectly:
+- "my wife and I" → num_travelers = 2, travel_style = "couple"
+- "I hate crowded tourist spots" → travel_vibe = ["offbeat"], interests = ["peace", "nature"]
+- "around Christmas" → infer start_date range (late December)
+- "tight on budget" or "we're not doing luxury" → budget_range = "budget"
+- "beach holiday", "chill trip", "relaxed" → pace = "relaxed", travel_vibe = ["leisure", "beach"]
+- "adventure", "trekking", "outdoors" → travel_vibe = ["adventure"]
+- "romantic getaway" → travel_vibe = ["romantic"]
+Never ignore these signals just because they weren't in a formal field.
 
-| Detail | Your Choice |
-|--------|-------------|
-| **Destination** | {dest_str} |
-| **Duration** | {days} days |
-| **Travelers** | {preferences.get('num_travelers', 1)} |
-| **Budget** | {preferences.get('budget_range', 'Not specified')} |
-| **Style** | {vibe_str} |
+STEP 2 — ASSESS WHAT'S TRULY MISSING:
+After extracting from the full conversation, what is GENUINELY still unknown and cannot be inferred?
+Priority: destination (most critical) → duration → number of travelers → budget → vibe (can usually be inferred)
+For multi-city trips: also need per-city day splits in city_segments[].
+If vibe can be inferred from their language, do NOT ask for it.
 
----
+STEP 3 — WRITE A WARM RESPONSE:
+- Ask for at most 2 things at a time, and ONLY things that are truly critical and unknown
+- Acknowledge what they've told you before asking more: "A week in Rajasthan for two — amazing choice! 🧡"
+- Frame questions as genuine curiosity, not form fields
+- If you have EVERYTHING needed, say so warmly and tell them you're ready to start planning
+- NEVER ask for something the user already answered earlier in the conversation
 
-✨ **Let me craft your perfect itinerary now!**"""
-        
-        # Build the main response acknowledging what we understood
-        response_parts = []
-        
-        # Acknowledge what we know
-        if preferences:
-            response_parts.append("### ✅ **Got it!**\n")
-            
-            understood = []
-            if preferences.get("destinations"):
-                dests = preferences.get("destinations")
-                dest_str = ', '.join(dests) if isinstance(dests, list) else dests
-                understood.append(f"📍 **Destination:** {dest_str}")
-            if preferences.get("origin_city"):
-                understood.append(f"🏠 **From:** {preferences.get('origin_city')}")
-            if preferences.get("duration_days"):
-                understood.append(f"📅 **Duration:** {preferences.get('duration_days')} days")
-            if preferences.get("num_travelers"):
-                understood.append(f"👥 **Travelers:** {preferences.get('num_travelers')}")
-            if preferences.get("budget_range") or preferences.get("daily_budget"):
-                budget = preferences.get("budget_range") or f"₹{preferences.get('daily_budget')}/day"
-                understood.append(f"💰 **Budget:** {budget}")
-            if preferences.get("travel_vibe"):
-                vibes = preferences.get("travel_vibe")
-                vibe_str = ', '.join(vibes) if isinstance(vibes, list) else vibes
-                understood.append(f"✨ **Vibe:** {vibe_str}")
-            if preferences.get("interests"):
-                interests = preferences.get("interests")
-                interests_str = ', '.join(interests) if isinstance(interests, list) else interests
-                understood.append(f"🎯 **Interests:** {interests_str}")
-            
-            if understood:
-                response_parts.append("\n".join(understood))
-        else:
-            response_parts.append("🌟 **Sounds exciting!**")
-        
-        # Add questions section at the end if we have questions
-        if questions:
-            response_parts.append("\n\n---\n")
-            response_parts.append("### ❓ **Quick Questions**\n")
-            response_parts.append("*Just need a bit more info to plan the perfect trip:*\n")
-            for i, q in enumerate(questions[:3], 1):
-                response_parts.append(f"{i}. {q}")
-        
-        return "\n".join(response_parts)
-    
-    async def generate_initial_greeting(self) -> str:
-        """Generate a friendly initial greeting."""
-        return """Hey there, fellow traveler! 🌴✈️
-
-I'm your AI travel buddy, and I'm super excited to help you plan an amazing trip!
-
-Where are you dreaming of going? And how many days do you have for this adventure?"""
+STEP 4 — OUTPUT:
+Return strict JSON only with keys: assistant_message, preferences, missing_fields, is_complete
+</how_to_respond>
+"""

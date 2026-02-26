@@ -1,14 +1,17 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Share2, Download, Loader2, MapPin, Calendar, Users, Wallet, Clock } from 'lucide-react';
+import { X, Share2, Download, Loader2, MapPin, Calendar, Users, Wallet, Clock, Crown } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { useRouter } from 'next/navigation';
 
 interface ItineraryModalProps {
     isOpen: boolean;
     onClose: () => void;
     itinerary: any;
+    weatherData?: any;
     tripId: string;
 }
 
@@ -16,13 +19,24 @@ export const ItineraryModal: React.FC<ItineraryModalProps> = ({
     isOpen,
     onClose,
     itinerary,
+    weatherData,
     tripId
 }) => {
     const [isExporting, setIsExporting] = useState(false);
+    const { user } = useAuth();
+    const router = useRouter();
 
     if (!isOpen || !itinerary) return null;
 
+    const canExport = user?.subscription_tier === 'adventure' || user?.subscription_tier === 'ultimate';
+
     const handleDownload = async () => {
+        if (!canExport) {
+            toast.error('PDF Export is a premium feature. Redirecting ...');
+            setTimeout(() => router.push('/plans'), 2000);
+            return;
+        }
+
         setIsExporting(true);
         try {
             await api.downloadItineraryPdf(tripId);
@@ -34,13 +48,41 @@ export const ItineraryModal: React.FC<ItineraryModalProps> = ({
         }
     };
 
-    const handleShare = () => {
-        const shareUrl = `${window.location.origin}/shared/${tripId}`;
-        navigator.clipboard.writeText(shareUrl);
-        toast.success('Share link copied to clipboard!');
+    const handleShare = async () => {
+        try {
+            const res = await api.updateTrip(tripId, { is_public: true });
+            let shareId = res.sharing_id || itinerary.sharing_id;
+
+            if (!shareId) {
+                const updated = await api.getTrip(tripId);
+                shareId = updated.sharing_id;
+            }
+
+            if (!shareId) {
+                toast.error('Failed to generate sharing link.');
+                return;
+            }
+
+            const shareUrl = `${window.location.origin}/shared/${shareId}`;
+            navigator.clipboard.writeText(shareUrl);
+            toast.success('Share link copied to clipboard!');
+        } catch (e) {
+            toast.error('Failed to share trip');
+        }
     };
 
     const { title, cities, start_date, num_days, num_travelers, budget_total, days } = itinerary;
+
+    // Helper functions for weather
+    const getWeatherIcon = (description: string) => {
+        const desc = description.toLowerCase();
+        if (desc.includes('rain') || desc.includes('shower')) return '🌧️';
+        if (desc.includes('cloud')) return '☁️';
+        if (desc.includes('clear') || desc.includes('sun')) return '☀️';
+        if (desc.includes('snow')) return '❄️';
+        if (desc.includes('thunder')) return '⛈️';
+        return '⛅';
+    };
 
     return (
         <div
@@ -104,6 +146,49 @@ export const ItineraryModal: React.FC<ItineraryModalProps> = ({
                             </div>
                         </div>
 
+                        {/* Weather Summary (if available) */}
+                        {weatherData && weatherData.weather && weatherData.weather.length > 0 && (
+                            <div className="p-6 border-b" style={{ borderColor: 'rgba(0,0,0,0.05)', backgroundColor: 'var(--bg-tertiary)' }}>
+                                <h3 className="font-semibold text-sm uppercase tracking-wide mb-3" style={{ color: 'var(--text-tertiary)' }}>
+                                    Weather Forecast
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {weatherData.weather.map((w: any, i: number) => {
+                                        // Pick the first day forecast
+                                        const forecast = w.forecast.daily?.[0];
+                                        return (
+                                            <div key={i} className="flex items-center gap-3 bg-white dark:bg-slate-800 p-3 rounded-xl shadow-sm border border-black/5 dark:border-white/5">
+                                                <div className="text-3xl">
+                                                    {getWeatherIcon(forecast?.description || 'clear')}
+                                                </div>
+                                                <div className="flex-1">
+                                                    <div className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+                                                        {w.city}
+                                                    </div>
+                                                    <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                                                        {forecast?.description || 'Clear skies'} • {w.forecast.current?.temp_c ? `${w.forecast.current.temp_c}°C` : ''}
+                                                    </div>
+                                                </div>
+                                                <div className="text-right text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                                                    <div>H: {forecast?.max_temp_c}°C</div>
+                                                    <div>L: {forecast?.min_temp_c}°C</div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                {weatherData.alerts && weatherData.alerts.length > 0 && (
+                                    <div className="mt-3 p-3 rounded-lg text-sm bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400 border border-red-100 dark:border-red-800/30 flex items-start gap-2">
+                                        <span>⚠️</span>
+                                        <div>
+                                            <div className="font-semibold">Weather Alert</div>
+                                            <div>{weatherData.alerts[0].headline}</div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {/* Day by Day Plan */}
                         <div className="p-6 space-y-6">
                             {days && days.map((day: any, idx: number) => (
@@ -121,7 +206,7 @@ export const ItineraryModal: React.FC<ItineraryModalProps> = ({
                                     </div>
 
                                     <div className="space-y-3 ml-4 border-l-2 pl-6" style={{ borderColor: 'var(--accent-50)' }}>
-                                        {day.activities && day.activities.map((activity: any, actIdx: number) => (
+                                        {day.stops && day.stops.map((activity: any, actIdx: number) => (
                                             <div key={actIdx} className="relative">
                                                 {/* Dot on line */}
                                                 <div
@@ -177,6 +262,7 @@ export const ItineraryModal: React.FC<ItineraryModalProps> = ({
                                 <Download className="w-4 h-4" />
                             )}
                             Download
+                            {!canExport && <Crown className="w-3.5 h-3.5 ml-1 text-yellow-300" />}
                         </button>
                     </div>
                 </div>

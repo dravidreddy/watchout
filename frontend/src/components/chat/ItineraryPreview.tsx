@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { MapPin, Calendar, Users, Wallet, Clock, ChevronRight, Download, Share2, Loader2 } from 'lucide-react';
+import { MapPin, Calendar, Users, Wallet, Clock, ChevronRight, Download, Share2, Loader2, Crown } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { useRouter } from 'next/navigation';
 
 interface ItineraryPreviewProps {
     itinerary: any;
@@ -16,13 +18,24 @@ export const ItineraryPreview: React.FC<ItineraryPreviewProps> = ({
     onSave,
     tripId
 }) => {
+    // ...
     const [isExporting, setIsExporting] = useState(false);
+    const { user } = useAuth();
+    const router = useRouter();
+
+    const canExport = user?.subscription_tier === 'adventure' || user?.subscription_tier === 'ultimate';
 
     const handleDownload = async () => {
         if (!tripId) {
             toast.error('Please save your trip first to export it as PDF');
             return;
         }
+        if (!canExport) {
+            toast.error('PDF Export is a premium feature. Redirecting ...');
+            setTimeout(() => router.push('/plans'), 2000);
+            return;
+        }
+
         setIsExporting(true);
         try {
             await api.downloadItineraryPdf(tripId);
@@ -34,14 +47,32 @@ export const ItineraryPreview: React.FC<ItineraryPreviewProps> = ({
         }
     };
 
-    const handleShare = () => {
+    const handleShare = async () => {
         if (!tripId) {
             toast.error('Please save your trip first to share it');
             return;
         }
-        const shareUrl = `${window.location.origin}/shared/${tripId}`;
-        navigator.clipboard.writeText(shareUrl);
-        toast.success('Share link copied to clipboard!');
+
+        try {
+            const res = await api.updateTrip(tripId, { is_public: true });
+            let shareId = res.sharing_id || itinerary.sharing_id;
+
+            if (!shareId) {
+                const updated = await api.getTrip(tripId);
+                shareId = updated.sharing_id;
+            }
+
+            if (!shareId) {
+                toast.error('Failed to generate sharing link.');
+                return;
+            }
+
+            const shareUrl = `${window.location.origin}/shared/${shareId}`;
+            navigator.clipboard.writeText(shareUrl);
+            toast.success('Share link copied to clipboard!');
+        } catch (e) {
+            toast.error('Failed to share trip');
+        }
     };
     if (!itinerary) {
         return (
@@ -86,10 +117,11 @@ export const ItineraryPreview: React.FC<ItineraryPreviewProps> = ({
                         <button
                             onClick={handleDownload}
                             disabled={isExporting}
-                            className="p-2 rounded-lg hover:bg-black/5 transition-colors"
+                            className="p-2 rounded-lg hover:bg-black/5 transition-colors flex items-center gap-1"
                             title="Export to PDF"
                         >
                             {isExporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />}
+                            {!canExport && <Crown className="w-3.5 h-3.5 text-yellow-500" />}
                         </button>
                     </div>
                 </div>
@@ -136,7 +168,7 @@ export const ItineraryPreview: React.FC<ItineraryPreviewProps> = ({
                         </div>
 
                         <div className="space-y-4 ml-4 border-l-2 pl-6 pb-2" style={{ borderColor: 'var(--accent-50)' }}>
-                            {day.activities && day.activities.map((activity: any, actIdx: number) => (
+                            {day.stops && day.stops.map((activity: any, actIdx: number) => (
                                 <div key={actIdx} className="relative">
                                     {/* Dot on line */}
                                     <div
@@ -160,7 +192,7 @@ export const ItineraryPreview: React.FC<ItineraryPreviewProps> = ({
                                     </div>
                                 </div>
                             ))}
-                            {(!day.activities || day.activities.length === 0) && (
+                            {(!day.stops || day.stops.length === 0) && (
                                 <p className="text-sm italic" style={{ color: 'var(--text-tertiary)' }}>
                                     No activities planned yet...
                                 </p>

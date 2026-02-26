@@ -1,3 +1,0 @@
-# Rate Limiting - SlowAPI
-slowapi>=0.1.9
-redis>=5.0.0  # Optional: for distributed rate limiting (production)

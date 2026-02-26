@@ -2,7 +2,7 @@
 User Deletion Service for DPDP Act Complete Right to Erasure
 Handles cascade deletion across all collections.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -28,12 +28,12 @@ class UserDeletionService:
         Returns:
             Dictionary with deletion statistics
         """
-        db: AsyncIOMotorDatabase = MongoDB.get_database()
+        db: AsyncIOMotorDatabase = MongoDB.get_db()
         stats = {}
         
         # 1. Delete user profile
         users_collection = db["users"]
-        result = await users_collection.delete_one({"uid": user_id})
+        result = await users_collection.delete_one({"firebase_id": user_id})
         stats["user_profile"] = result.deleted_count
         
         # 2. Delete all trips
@@ -56,7 +56,7 @@ class UserDeletionService:
         consent_collection = ConsentService.get_collection()
         result = await consent_collection.update_many(
             {"user_id": user_id},
-            {"$set": {"data_deleted": True, "deletion_timestamp": datetime.utcnow()}}
+            {"$set": {"data_deleted": True, "deletion_timestamp": datetime.now(timezone.utc)}}
         )
         stats["consents_marked"] = result.modified_count
         
@@ -68,7 +68,7 @@ class UserDeletionService:
                 "$set": {
                     "user_id": "DELETED_USER",
                     "anonymized": True,
-                    "anonymized_at": datetime.utcnow()
+                    "anonymized_at": datetime.now(timezone.utc)
                 }
             }
         )
@@ -83,7 +83,7 @@ class UserDeletionService:
         deletion_logs_collection = db["deletion_logs"]
         await deletion_logs_collection.insert_one({
             "user_id": user_id,
-            "deleted_at": datetime.utcnow(),
+            "deleted_at": datetime.now(timezone.utc),
             "stats": stats,
             "deletion_method": "user_request"
         })
@@ -101,12 +101,12 @@ class UserDeletionService:
         Returns:
             Dictionary showing if data exists in each collection
         """
-        db: AsyncIOMotorDatabase = MongoDB.get_database()
+        db: AsyncIOMotorDatabase = MongoDB.get_db()
         
         checks = {}
         
         # Check each collection
-        checks["user_profile"] = await db["users"].count_documents({"uid": user_id}) > 0
+        checks["user_profile"] = await db["users"].count_documents({"firebase_id": user_id}) > 0
         checks["trips"] = await db["trips"].count_documents({"user_id": user_id}) > 0
         checks["conversations"] = await db["conversations"].count_documents({"user_id": user_id}) > 0
         checks["memories"] = await db["memories"].count_documents({"user_id": user_id}) > 0

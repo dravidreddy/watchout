@@ -1,7 +1,7 @@
 """
 Watchout Backend - Trip Models
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
 from enum import Enum
@@ -164,6 +164,9 @@ class Trip(BaseModel):
     # The generated itinerary
     itinerary: Optional[Itinerary] = None
     
+    # Screenshot Analysis Data
+    screenshot_metadata: Optional[Dict[str, Any]] = None
+    
     # Classification
     category: Optional[str] = None  # e.g., "Adventure", "Relaxation", "Family"
     tags: List[str] = Field(default_factory=list)
@@ -192,6 +195,31 @@ class TripCreate(BaseModel):
     is_public: bool = False
     itinerary: Optional[Itinerary] = None
 
+    @model_validator(mode='after')
+    def validate_dates(self):
+        """EC1/EC2: Validate impossible dates and enforce chronological order."""
+        start = self.start_date
+        end = self.end_date
+        
+        if start:
+            # EC1: Prevent booking trips in the past (using timezone-aware UTC current date)
+            from datetime import datetime, timezone
+            today = datetime.now(timezone.utc).date()
+            if start < today:
+                raise ValueError("start_date cannot be in the past")
+                
+        if start and end:
+            if end < start:
+                raise ValueError("end_date cannot be before start_date")
+            
+            # Auto-calculate num_days if not provided
+            if not self.num_days:
+                # EC2: Safe timedelta arithmetic
+                delta = end - start
+                self.num_days = delta.days + 1
+                
+        return self
+
 
 class TripUpdate(BaseModel):
     """Model for updating a trip."""
@@ -205,6 +233,17 @@ class TripUpdate(BaseModel):
     category: Optional[str] = None
     tags: Optional[List[str]] = None
     is_public: Optional[bool] = None
+
+    @model_validator(mode='after')
+    def validate_dates(self):
+        """EC1/EC2: Validate impossible dates if both are provided during update."""
+        start = self.start_date
+        end = self.end_date
+        
+        if start and end:
+            if end < start:
+                raise ValueError("end_date cannot be before start_date")
+        return self
 
 
 class TripResponse(BaseModel):

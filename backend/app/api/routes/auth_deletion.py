@@ -2,7 +2,7 @@
 Authentication Routes - Extended with User Deletion
 """
 from fastapi import APIRouter, HTTPException, Depends, Request
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.core.firebase_auth import verify_firebase_token
 from app.models.user import UserCreate, UserUpdate, UserResponse
@@ -49,7 +49,7 @@ async def delete_account(
         "status": "deleted",
         "message": "Account and all data permanently deleted",
         "stats": stats,
-        "deleted_at": datetime.utcnow()
+        "deleted_at": datetime.now(timezone.utc)
     }
 
 

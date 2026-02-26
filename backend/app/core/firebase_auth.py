@@ -6,6 +6,9 @@ from firebase_admin import auth, credentials
 from fastapi import HTTPException, Security, Depends, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional, Dict, Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.core.config import settings
 
@@ -33,10 +36,10 @@ def init_firebase() -> None:
         
         cred = credentials.Certificate(cred_dict)
         _firebase_app = firebase_admin.initialize_app(cred)
-        print("Firebase Admin SDK initialized successfully")
+        logger.info("Firebase Admin SDK initialized successfully")
     except Exception as e:
-        print(f"Warning: Firebase initialization failed: {e}")
-        print("Authentication will not work until Firebase is properly configured")
+        logger.warning("Firebase initialization failed: %s", e)
+        logger.warning("Authentication will not work until Firebase is properly configured")
 
 
 # Security scheme for Bearer token
@@ -50,9 +53,31 @@ async def verify_firebase_token(
     """
     Verify Firebase ID token from Authorization header.
     Returns decoded token with user info.
-    Supports Dev Bypass with X-Test-Bypass-Token header.
+    Supports Dev Bypass with X-Test-Bypass-Token header (only when no real token).
     """
-    # 1. Check for Dev Bypass
+    # 1. Standard Firebase Verification (always preferred over bypass)
+    if credentials is not None:
+        token = credentials.credentials
+        try:
+            decoded_token = auth.verify_id_token(token)
+            return decoded_token
+        except auth.ExpiredIdTokenError:
+            raise HTTPException(
+                status_code=401,
+                detail="Token has expired"
+            )
+        except auth.InvalidIdTokenError:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid token"
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=401,
+                detail=f"Authentication failed: {str(e)}"
+            )
+    
+    # 2. Dev Bypass (only when no real Firebase token is provided)
     if settings.app_env == "development" and x_test_bypass_token:
         if x_test_bypass_token == settings.dev_bypass_secret:
             return {
@@ -64,33 +89,10 @@ async def verify_firebase_token(
                 "is_dev_bypass": True
             }
     
-    # 2. Standard Firebase Verification
-    if credentials is None:
-        raise HTTPException(
-            status_code=401,
-            detail="Missing authorization header"
-        )
-    
-    token = credentials.credentials
-    
-    try:
-        decoded_token = auth.verify_id_token(token)
-        return decoded_token
-    except auth.ExpiredIdTokenError:
-        raise HTTPException(
-            status_code=401,
-            detail="Token has expired"
-        )
-    except auth.InvalidIdTokenError:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid token"
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=401,
-            detail=f"Authentication failed: {str(e)}"
-        )
+    raise HTTPException(
+        status_code=401,
+        detail="Missing authorization header"
+    )
 
 
 async def get_current_user(
@@ -105,7 +107,8 @@ async def get_current_user(
         "email": token_data.get("email"),
         "name": token_data.get("name"),
         "picture": token_data.get("picture"),
-        "email_verified": token_data.get("email_verified", False)
+        "email_verified": token_data.get("email_verified", False),
+        "is_dev_bypass": token_data.get("is_dev_bypass", False)
     }
 
 

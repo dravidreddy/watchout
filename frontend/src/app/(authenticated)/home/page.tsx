@@ -5,8 +5,10 @@ import { Bell, User, Search, ArrowRight, MapPin, Star, ChevronRight } from 'luci
 import Link from 'next/link';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { DestinationCard, SeasonalCard } from '@/components/home/DestinationCard';
+import { MoodSelector, MOODS } from '@/components/home/MoodSelector';
 import { api, Destination } from '@/lib/api';
 import { OnboardModal } from '@/components/onboarding/OnboardModal';
+import { useMoodStore } from '@/lib/store';
 
 const aiSuggestions = [
     'Best weekend trip from Hyderabad',
@@ -22,12 +24,18 @@ const seasonalPicks = [
 
 export default function HomePage() {
     const { user } = useAuth();
+    const { currentMood } = useMoodStore();
     const [searchQuery, setSearchQuery] = useState('');
     const [trending, setTrending] = useState<Destination[]>([]);
     const [nearby, setNearby] = useState<Destination[]>([]);
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showOnboarding, setShowOnboarding] = useState(false);
+
+    const moodInfo = MOODS.find(m => m.id === currentMood);
+    const greeting = moodInfo
+        ? `${moodInfo.emoji} Ready for a ${moodInfo.label.toLowerCase()} trip?`
+        : `Good ${new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}${user?.name ? `, ${user.name.split(' ')[0]}` : ''}!`;
 
     useEffect(() => {
         // Check both user state and localStorage to prevent onboarding from showing after completion
@@ -85,29 +93,62 @@ export default function HomePage() {
 
                 // Only request location if we don't have valid stored data
                 if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(
-                        async (pos) => {
-                            try {
-                                const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                                // Store the location for future use
-                                localStorage.setItem('user_location', JSON.stringify(coords));
-                                localStorage.setItem('user_location_timestamp', Date.now().toString());
+                    const requestWithGeolocation = () => {
+                        navigator.geolocation.getCurrentPosition(
+                            async (pos) => {
+                                try {
+                                    const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                                    // Store the location for future use
+                                    localStorage.setItem('user_location', JSON.stringify(coords));
+                                    localStorage.setItem('user_location_timestamp', Date.now().toString());
 
-                                const nearbyData = await api.getNearbyDestinations(coords.lat, coords.lng);
-                                setNearby(nearbyData);
-                            } catch (e) {
-                                console.error('Nearby fetch failed', e);
-                                const fallback = getFallbackLocation();
-                                const nearbyData = await api.getNearbyDestinations(fallback.lat, fallback.lng);
-                                setNearby(nearbyData);
+                                    const nearbyData = await api.getNearbyDestinations(coords.lat, coords.lng);
+                                    setNearby(nearbyData);
+                                } catch (e) {
+                                    console.error('Nearby fetch failed', e);
+                                    useFallback();
+                                }
+                            },
+                            async () => {
+                                useFallback();
                             }
-                        },
-                        async () => {
-                            const fallback = getFallbackLocation();
-                            const nearbyData = await api.getNearbyDestinations(fallback.lat, fallback.lng);
-                            setNearby(nearbyData);
+                        );
+                    };
+
+                    const useFallback = async () => {
+                        const fallback = getFallbackLocation();
+                        const nearbyData = await api.getNearbyDestinations(fallback.lat, fallback.lng);
+                        setNearby(nearbyData);
+                    };
+
+                    try {
+                        // Use permissions API to avoid spamming the user
+                        const permission = await navigator.permissions.query({ name: 'geolocation' });
+
+                        if (permission.state === 'granted') {
+                            requestWithGeolocation();
+                        } else if (permission.state === 'prompt') {
+                            const hasPrompted = localStorage.getItem('has_prompted_location');
+                            if (!hasPrompted) {
+                                localStorage.setItem('has_prompted_location', 'true');
+                                requestWithGeolocation();
+                            } else {
+                                useFallback();
+                            }
+                        } else {
+                            // Denied
+                            useFallback();
                         }
-                    );
+                    } catch (e) {
+                        // Fallback for browsers that don't support the permissions API fully
+                        const hasPrompted = localStorage.getItem('has_prompted_location');
+                        if (!hasPrompted) {
+                            localStorage.setItem('has_prompted_location', 'true');
+                            requestWithGeolocation();
+                        } else {
+                            useFallback();
+                        }
+                    }
                 } else {
                     const fallback = getFallbackLocation();
                     const nearbyData = await api.getNearbyDestinations(fallback.lat, fallback.lng);
@@ -143,7 +184,7 @@ export default function HomePage() {
                             B
                         </div>
                         <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                            Bharat Voyager
+                            Watchout
                         </span>
                     </div>
                     <div className="flex items-center gap-2">
@@ -164,8 +205,12 @@ export default function HomePage() {
             </header>
 
             <div className="px-4 md:px-8 py-6 max-w-7xl mx-auto">
-                {/* Search Bar */}
+                {/* Hero Greeting + Search Bar */}
                 <div className="mb-6">
+                    <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
+                        {greeting}
+                    </h1>
+                    <p className="text-sm mb-4" style={{ color: 'var(--text-tertiary)' }}>Where shall we go?</p>
                     <div className="relative">
                         <Search
                             className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5"
@@ -173,16 +218,18 @@ export default function HomePage() {
                         />
                         <input
                             type="text"
-                            placeholder="Where do you want to go?"
+                            placeholder="Destinations, experiences, trips…"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="input search-input py-4"
                             style={{ paddingLeft: '2.75rem' }}
                         />
                     </div>
-                    <p className="mt-2 text-sm" style={{ color: 'var(--text-tertiary)' }}>
-                        Trips, places, routes, weather…
-                    </p>
+                </div>
+
+                {/* Mood Selector */}
+                <div className="mb-8">
+                    <MoodSelector />
                 </div>
 
                 {/* Desktop Layout */}
@@ -190,7 +237,7 @@ export default function HomePage() {
                     {/* Main Content */}
                     <div className="flex-1">
                         {/* Start Trip CTA */}
-                        <Link href="/chat">
+                        <Link href="/chat?new=true">
                             <div
                                 className="card p-6 mb-8 cursor-pointer card-hover-scale"
                                 style={{
@@ -357,7 +404,7 @@ export default function HomePage() {
                         </Link>
                     </div>
                     <p style={{ color: 'var(--text-tertiary)' }}>
-                        © 2026 Bharat Voyager. Made with ❤️ in India.
+                        © 2026 Watchout. Made with ❤️ in India.
                     </p>
                 </footer>
             </div>

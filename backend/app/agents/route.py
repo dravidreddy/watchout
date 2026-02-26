@@ -32,10 +32,7 @@ You use Mapbox for accurate routing in India, considering:
     ) -> Dict[str, Any]:
         """
         Calculate routes for a day's activities.
-        
-        Context should include:
-        - stops: List of stops with coordinates
-        - transport_mode: Preferred mode (driving, walking)
+        Returns standardized format: {response, data, error}
         """
         context = context or {}
         stops = context.get("stops", [])
@@ -43,24 +40,38 @@ You use Mapbox for accurate routing in India, considering:
         if len(stops) < 2:
             return {
                 "response": "Need at least 2 stops to calculate a route.",
-                "route": None
+                "data": {},
+                "error": "Insufficient stops"
             }
         
         # Calculate route
-        route = await self.mapbox.get_route_for_day(stops)
-        
-        if route:
+        try:
+            route = await self.mapbox.get_route_for_day(stops)
+            
+            if route:
+                return {
+                    "response": self._format_route_response(route),
+                    "data": {
+                        "route": route,
+                        "total_travel_time": route.get("total_duration_minutes"),
+                        "total_distance": route.get("total_distance_km")
+                    },
+                    "error": None
+                }
+            
             return {
-                "response": self._format_route_response(route),
-                "route": route,
-                "total_travel_time": route.get("total_duration_minutes"),
-                "total_distance": route.get("total_distance_km")
+                "response": "Could not calculate route. Please check the locations.",
+                "data": {},
+                "error": "Route calculation failed"
             }
-        
-        return {
-            "response": "Could not calculate route. Please check the locations.",
-            "route": None
-        }
+        except Exception as e:
+            return {
+                "response": "An error occurred while calculating the route.",
+                "data": {},
+                "error": str(e)
+            }
+
+    # ... (Keep existing methods: calculate_route, add_routes_to_day_plan, geocode_stops) -> Can copy them or just let Python keep them if I was patching, but I am overwriting so I MUST provide them.
     
     async def calculate_route(
         self,
@@ -68,17 +79,7 @@ You use Mapbox for accurate routing in India, considering:
         destination: Dict[str, float],
         waypoints: Optional[List[Dict[str, float]]] = None
     ) -> Optional[Dict[str, Any]]:
-        """
-        Calculate route between two points with optional waypoints.
-        
-        Args:
-            origin: {latitude, longitude}
-            destination: {latitude, longitude}
-            waypoints: Optional list of intermediate points
-        
-        Returns:
-            Route information
-        """
+        """Calculate route between two points with optional waypoints."""
         origin_tuple = (origin["longitude"], origin["latitude"])
         dest_tuple = (destination["longitude"], destination["latitude"])
         
@@ -100,15 +101,7 @@ You use Mapbox for accurate routing in India, considering:
         self,
         day_plan: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """
-        Add route information between activities in a day plan.
-        
-        Args:
-            day_plan: Day plan with activities
-        
-        Returns:
-            Day plan with route information added
-        """
+        """Add route information between activities in a day plan."""
         activities = day_plan.get("activities", [])
         
         if len(activities) < 2:
@@ -149,15 +142,7 @@ You use Mapbox for accurate routing in India, considering:
         self,
         stops: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """
-        Add coordinates to stops that don't have them.
-        
-        Args:
-            stops: List of stops, some may have addresses only
-        
-        Returns:
-            Stops with coordinates added
-        """
+        """Add coordinates to stops that don't have them."""
         updated_stops = []
         
         for stop in stops:
@@ -182,21 +167,22 @@ You use Mapbox for accurate routing in India, considering:
         return updated_stops
     
     def _format_route_response(self, route: Dict[str, Any]) -> str:
-        """Format route information as a response."""
+        """Format route information as a conversational response."""
         total_time = route.get("total_duration_minutes", 0)
         total_dist = route.get("total_distance_km", 0)
         legs = route.get("legs", [])
         
-        response = f"""🗺️ **Route Overview**
-
-**Total Travel Time:** {total_time} minutes
-**Total Distance:** {total_dist} km
-
-**Route Breakdown:**
-"""
+        # Convert total minutes to hours/mins for better readability
+        hours = int(total_time // 60)
+        mins = int(total_time % 60)
+        time_str = f"{hours}h {mins}m" if hours > 0 else f"{mins} mins"
         
+        response = f"I've mapped out the route! 🗺️ It covers about **{total_dist} km** and should take roughly **{time_str}** of driving time.\n\n"
+        
+        response += "**Here's the plan:**\n"
         for leg in legs:
-            response += f"• {leg.get('from')} → {leg.get('to')}: "
-            response += f"{leg.get('duration_minutes')} min ({leg.get('distance_km')} km)\n"
-        
+            l_time = leg.get('duration_minutes')
+            leg_time_str = f"{int(l_time // 60)}h {int(l_time % 60)}m" if l_time > 60 else f"{l_time} mins"
+            response += f"• From **{leg.get('from')}** to **{leg.get('to')}**: ~{leg_time_str} ({leg.get('distance_km')} km)\n"
+            
         return response

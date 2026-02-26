@@ -36,14 +36,24 @@ interface ChatState {
     currentAgent: string;
     currentStatus: string;
     extractedItinerary: any | null;
+    weatherData: any | null;
     activeTripId: string | null;
+    isUploadingImage: boolean;
+    extractedLocation: string | null;
+    isVerifyingLocation: boolean;
     addMessage: (message: ChatMessage) => void;
     appendToLastMessage: (content: string) => void;
     setStreaming: (streaming: boolean) => void;
     setAgentStatus: (agent: string, status: string) => void;
     setExtractedItinerary: (itinerary: any) => void;
+    setWeatherData: (data: any) => void;
     setActiveTripId: (tripId: string | null) => void;
+    setMessages: (messages: ChatMessage[]) => void;
+    updateLastMessageData: (data: unknown) => void;
     clearMessages: () => void;
+    setUploadingImage: (isUploading: boolean) => void;
+    setExtractedLocation: (location: string | null) => void;
+    setVerifyingLocation: (isVerifying: boolean) => void;
 }
 
 export interface ChatMessage {
@@ -53,6 +63,7 @@ export interface ChatMessage {
     timestamp: Date;
     agent?: string;
     data?: unknown;
+    status?: 'pending' | 'complete' | 'error';
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -61,7 +72,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     currentAgent: '',
     currentStatus: '',
     extractedItinerary: null,
+    weatherData: null,
     activeTripId: null,
+    isUploadingImage: false,
+    extractedLocation: null,
+    isVerifyingLocation: false,
 
     setActiveTripId: (activeTripId) => set({ activeTripId }),
 
@@ -88,8 +103,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
     setAgentStatus: (currentAgent, currentStatus) => set({ currentAgent, currentStatus }),
 
     setExtractedItinerary: (extractedItinerary) => set({ extractedItinerary }),
+    setWeatherData: (weatherData) => set({ weatherData }),
 
-    clearMessages: () => set({ messages: [], currentAgent: '', currentStatus: '', extractedItinerary: null })
+    setMessages: (messages) => set({ messages }),
+
+    updateLastMessageData: (data) => set((state) => {
+        const messages = [...state.messages];
+        if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+            const lastMsg = messages[messages.length - 1];
+            messages[messages.length - 1] = {
+                ...lastMsg,
+                data: {
+                    ...(typeof lastMsg.data === 'object' && lastMsg.data !== null ? lastMsg.data : {}),
+                    ...(typeof data === 'object' && data !== null ? data : {})
+                }
+            };
+        }
+        return { messages };
+    }),
+
+    clearMessages: () => set({ messages: [], currentAgent: '', currentStatus: '', extractedItinerary: null, weatherData: null }),
+
+    setUploadingImage: (isUploadingImage) => set({ isUploadingImage }),
+
+    setExtractedLocation: (extractedLocation) => set({ extractedLocation }),
+
+    setVerifyingLocation: (isVerifyingLocation) => set({ isVerifyingLocation })
 }));
 
 interface TripState {
@@ -112,3 +151,20 @@ export const useTripStore = create<TripState>((set, get) => ({
         preferences: { ...state.preferences, ...prefs }
     }))
 }));
+
+// ── Mood store (persisted across sessions) ──────────────────────────────────
+
+interface MoodState {
+    currentMood: string | null;
+    setMood: (mood: string | null) => void;
+}
+
+export const useMoodStore = create<MoodState>()(
+    persist(
+        (set) => ({
+            currentMood: null,
+            setMood: (currentMood) => set({ currentMood }),
+        }),
+        { name: 'watchout-mood' }
+    )
+);

@@ -109,7 +109,7 @@ export default function PlansPage() {
                 setUpdatingPlan(null);
             },
             onError: (error) => {
-                toast.error(error);
+                toast.error(error.message);
                 setUpdatingPlan(null);
             }
         });

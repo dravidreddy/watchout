@@ -1,0 +1,56 @@
+# Render Blueprint - Watchout Backend (Production)
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: watchout-backend-prod
+    runtime: python
+    region: oregon
+    plan: standard
+    buildCommand: pip install -r requirements.txt
+    preDeployCommand: pytest tests/ -v  # Prevent deploy if tests fail
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 4
+    rootDir: backend
+    # PR2: Enable zero-downtime blue/green deployment
+    deploy:
+      type: blue_green
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_SECRET_KEY
+        generateValue: true
+      - key: FRONTEND_URL
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false
+      - key: MAPBOX_ACCESS_TOKEN
+        sync: false
+      - key: WEATHERAPI_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: SERPER_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+    healthCheckPath: /health
