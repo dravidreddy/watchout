@@ -1,7 +1,7 @@
 """
 Watchout Backend - Payment Routes with Idempotency
 """
-from fastapi import APIRouter, HTTPException, Depends, Request, Header
+from fastapi import APIRouter, HTTPException, Depends, Request, Header, Response
 from typing import Optional
 import razorpay
 from datetime import datetime, timezone
@@ -46,6 +46,7 @@ def get_razorpay_client():
 @limiter.limit(RateLimits.PAYMENT_CREATE)
 async def create_order(
     request: Request,
+    response: Response,
     currency: str = "INR",
     tier: str = "adventure",
     idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
@@ -135,6 +136,7 @@ async def create_order(
 @limiter.limit(RateLimits.PAYMENT_VERIFY)
 async def verify_payment(
     request: Request,
+    response: Response,
     token_data: dict = Depends(verify_firebase_token)
 ):
     """

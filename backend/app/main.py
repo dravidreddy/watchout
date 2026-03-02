@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.core.firebase_auth import init_firebase
 from app.db.mongo import MongoDB
 from app.api import api_router
+from app.core.rate_limiter import init_rate_limiter
 from app.services.payment_reconciliation import (
     init_reconciliation_scheduler,
     shutdown_reconciliation_scheduler,
@@ -45,11 +46,6 @@ async def lifespan(app: FastAPI):
         init_firebase()
         logger.info("[SUCCESS] Firebase initialized")
         
-        # Initialize rate limiter
-        from app.core.rate_limiter import init_rate_limiter
-        init_rate_limiter(app)
-        logger.info("[SUCCESS] Rate limiting enabled")
-        
         # Initialize payment reconciliation scheduler
         init_reconciliation_scheduler(app)
         logger.info("[SUCCESS] Payment reconciliation scheduler initialized")
@@ -72,11 +68,14 @@ def validate_environment():
     Validate that all required environment variables are set.
     Raises RuntimeError if any critical variables are missing.
     """
-    # Critical variables required for production
+    # Critical variables required for all environments
     critical_vars = {
         "MONGODB_URI": settings.mongodb_uri,
         "GROQ_API_KEY": settings.groq_api_key,
     }
+    # Redis-backed distributed rate limiting is mandatory outside local development.
+    if settings.app_env in {"production", "staging"} and not settings.redis_url:
+        critical_vars["REDIS_URL"] = settings.redis_url
     
     # Warning-level variables (app can run without, but degraded)
     warning_vars = {
@@ -109,6 +108,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Register limiter and its exception handlers before middleware stack is built.
+init_rate_limiter(app)
 
 # OB5: Instrument and expose Prometheus metrics endpoint
 from prometheus_fastapi_instrumentator import Instrumentator

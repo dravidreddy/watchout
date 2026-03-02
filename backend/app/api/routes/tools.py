@@ -34,6 +34,7 @@ async def analyze_screenshot_options(response: Response):
 @limiter.limit("8/minute")
 async def analyze_screenshot(
     request: Request,
+    response: Response,
     payload: ScreenshotAnalyzeRequest,
     _token_data: dict = Depends(verify_firebase_token),
 ):

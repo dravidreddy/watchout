@@ -10,7 +10,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, Depends, HTTPException, Body, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Body, Request, BackgroundTasks, Response
 from fastapi.responses import StreamingResponse
 
 from app.core.rate_limiter import limiter, RateLimits
@@ -103,6 +103,7 @@ async def _generate_trip_title(itinerary: dict, preferences: dict) -> str:
 @limiter.limit("10/minute")
 async def stream_chat(
     request: Request,
+    response: Response,
     background_tasks: BackgroundTasks,
     chat_request: ChatRequest = Body(...),
     user_payload: Dict[str, Any] = Depends(verify_firebase_token)

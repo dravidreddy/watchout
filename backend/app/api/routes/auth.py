@@ -2,7 +2,7 @@
 Authentication Routes
 Includes login, profile management, and account deletion (DPDP Act compliance).
 """
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Response
 from datetime import datetime, timezone
 
 from app.core.firebase_auth import verify_firebase_token
@@ -18,6 +18,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 @limiter.limit(RateLimits.LOGIN)
 async def login_user(
     request: Request,
+    response: Response,
     user_data: UserCreate,
     token_data: dict = Depends(verify_firebase_token)
 ):
@@ -150,6 +151,7 @@ async def logout(token_data: dict = Depends(verify_firebase_token)):
 @limiter.limit(RateLimits.USER_DELETE)
 async def delete_account(
     request: Request,
+    response: Response,
     token_data: dict = Depends(verify_firebase_token)
 ):
     """

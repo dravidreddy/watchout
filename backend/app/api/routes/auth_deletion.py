@@ -1,7 +1,7 @@
 """
 Authentication Routes - Extended with User Deletion
 """
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Response
 from datetime import datetime, timezone
 
 from app.core.firebase_auth import verify_firebase_token
@@ -17,6 +17,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 @limiter.limit(RateLimits.USER_DELETE)
 async def delete_account(
     request: Request,
+    response: Response,
     token_data: dict = Depends(verify_firebase_token)
 ):
     """

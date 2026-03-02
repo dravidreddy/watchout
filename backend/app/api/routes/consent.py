@@ -1,7 +1,7 @@
 """
 Consent API Routes for DPDP Act Compliance
 """
-from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi import APIRouter, Depends, Request, HTTPException, Response
 from datetime import datetime, timezone
 
 from app.core.firebase_auth import verify_firebase_token
@@ -21,6 +21,7 @@ router = APIRouter(prefix="/consent", tags=["Consent & Privacy"])
 @limiter.limit(RateLimits.USER_UPDATE)
 async def record_consent(
     request: Request,
+    response: Response,
     consent_req: ConsentRequest,
     token_data: dict = Depends(verify_firebase_token)
 ):
@@ -58,6 +59,7 @@ async def record_consent(
 @limiter.limit(RateLimits.USER_UPDATE)
 async def get_consent_status(
     request: Request,
+    response: Response,
     token_data: dict = Depends(verify_firebase_token)
 ):
     """
@@ -79,6 +81,7 @@ async def get_consent_status(
 @limiter.limit(RateLimits.USER_UPDATE)
 async def withdraw_consent(
     request: Request,
+    response: Response,
     withdrawal_req: ConsentWithdrawalRequest,
     token_data: dict = Depends(verify_firebase_token)
 ):
@@ -112,6 +115,7 @@ async def withdraw_consent(
 @limiter.limit(RateLimits.USER_UPDATE)
 async def get_consent_history(
     request: Request,
+    response: Response,
     purpose: str = None,
     token_data: dict = Depends(verify_firebase_token)
 ):
