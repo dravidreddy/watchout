@@ -72,7 +72,10 @@ export async function apiRequest<T>(
                 }
                 const errorData = await response.json().catch(() => ({ detail: response.statusText }));
                 console.error('Error details:', errorData);
-                throw new ApiError(response.status, errorData.detail || 'Request failed');
+                throw new ApiError(
+                    response.status,
+                    errorData.detail || errorData.message || 'Request failed'
+                );
             }
 
             return response.json();
