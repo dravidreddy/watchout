@@ -75,8 +75,26 @@ async def razorpay_webhook(
     event_data = await request.json()
     event_type = event_data.get("event")
     payload = event_data.get("payload", {})
-    
-    logger.info(f"Received webhook: {event_type}", event_data=event_data)
+    event_id = event_data.get("id")
+
+    logger.info("Received webhook", event_type=event_type, event_id=event_id)
+
+    if event_id:
+        db = MongoDB.get_db()
+        receipts = db["webhook_receipts"]
+        result = await receipts.update_one(
+            {"event_id": event_id},
+            {
+                "$setOnInsert": {
+                    "event_type": event_type,
+                    "received_at": datetime.now(timezone.utc)
+                }
+            },
+            upsert=True
+        )
+        if result.matched_count > 0:
+            logger.warning("Duplicate webhook ignored", event_id=event_id, event_type=event_type)
+            return {"status": "duplicate_ignored"}
     
     # Route to appropriate handler
     try:
@@ -97,7 +115,7 @@ async def razorpay_webhook(
         logger.error(f"Webhook processing error: {str(e)}", exc_info=True)
         # Return 200 to prevent Razorpay retries for processing errors
         # Log the error for manual review
-        await log_webhook_error(event_type, event_data, str(e))
+        await log_webhook_error(event_type, {"id": event_id}, str(e))
     
     return {"status": "ok"}
 

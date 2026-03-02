@@ -71,10 +71,11 @@ async def verify_firebase_token(
                 status_code=401,
                 detail="Invalid token"
             )
-        except Exception as e:
+        except Exception:
+            logger.exception("Firebase token verification failed")
             raise HTTPException(
                 status_code=401,
-                detail=f"Authentication failed: {str(e)}"
+                detail="Authentication failed"
             )
     
     # 2. Dev Bypass (only when no real Firebase token is provided)

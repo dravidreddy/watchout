@@ -5,13 +5,52 @@ Runs daily at 2 AM IST to reconcile payments stuck in 'authorized' state
 """
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Any
+from typing import Optional
 import razorpay
+import uuid
 from app.db.mongo import MongoDB
 from app.core.config import settings
 import structlog
 
 logger = structlog.get_logger()
+
+_scheduler: Optional[AsyncIOScheduler] = None
+_LOCK_KEY = "watchout:jobs:payment_reconciliation"
+
+
+async def _acquire_job_lock(ttl_seconds: int = 3600):
+    """
+    Acquire a distributed lock in Redis so reconciliation runs once
+    across multi-worker/multi-instance deployments.
+    """
+    if not settings.redis_url:
+        return None, None
+    try:
+        import redis.asyncio as aioredis  # type: ignore
+        client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        token = uuid.uuid4().hex
+        acquired = await client.set(_LOCK_KEY, token, ex=ttl_seconds, nx=True)
+        if acquired:
+            return client, token
+        await client.close()
+        return None, None
+    except Exception as e:
+        logger.warning("Failed to acquire reconciliation lock: %s", e)
+        return None, None
+
+
+async def _release_job_lock(client, token: str):
+    """Release the distributed reconciliation lock if we still own it."""
+    if not client or not token:
+        return
+    try:
+        current = await client.get(_LOCK_KEY)
+        if current == token:
+            await client.delete(_LOCK_KEY)
+    except Exception as e:
+        logger.warning("Failed to release reconciliation lock: %s", e)
+    finally:
+        await client.close()
 
 
 async def reconcile_stuck_payments():
@@ -22,103 +61,113 @@ async def reconcile_stuck_payments():
     This prevents "ghost bookings" where users pay but don't get premium tier
     due to webhook failures or network issues.
     """
-    db = MongoDB.get_db()
-    payments_collection = db["payments"]
+    lock_client = None
+    lock_token = None
+    try:
+        lock_client, lock_token = await _acquire_job_lock()
+        if settings.redis_url and not lock_token:
+            logger.info("Reconciliation skipped: another worker holds the lock")
+            return
+
+        db = MongoDB.get_db()
+        payments_collection = db["payments"]
     
-    # Find payments stuck for more than 24 hours
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-    stuck_payments = await payments_collection.find({
-        "status": {"$in": ["authorized", "created"]},
-        "created_at": {"$lt": cutoff}
-    }).to_list(None)
+        # Find payments stuck for more than 24 hours
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        stuck_payments = await payments_collection.find({
+            "status": {"$in": ["authorized", "created"]},
+            "created_at": {"$lt": cutoff}
+        }).to_list(None)
     
-    if not stuck_payments:
-        logger.info("Reconciliation: No stuck payments found")
-        return
+        if not stuck_payments:
+            logger.info("Reconciliation: No stuck payments found")
+            return
     
-    logger.info(f"Reconciliation: Found {len(stuck_payments)} stuck payments")
+        logger.info(f"Reconciliation: Found {len(stuck_payments)} stuck payments")
     
-    # Initialize Razorpay client
-    client = razorpay.Client(auth=(settings.razorpay_key_id, settings.razorpay_key_secret))
+        # Initialize Razorpay client
+        client = razorpay.Client(auth=(settings.razorpay_key_id, settings.razorpay_key_secret))
     
-    reconciled_count = 0
-    failed_count = 0
+        reconciled_count = 0
+        failed_count = 0
     
-    for payment in stuck_payments:
-        try:
-            payment_id = payment.get("payment_id")
-            if not payment_id:
-                logger.warning(f"Payment {payment.get('_id')} has no payment_id, skipping")
-                continue
-            
-            # Fetch actual status from Razorpay
-            razorpay_payment = client.payment.fetch(payment_id)
-            actual_status = razorpay_payment.get("status")
-            
-            logger.info(
-                f"Payment {payment_id}: DB status={payment['status']}, "
-                f"Razorpay status={actual_status}"
-            )
-            
-            if actual_status == "captured":
-                # Payment was successful but webhook was missed
-                from app.api.routes.webhooks import handle_payment_captured
-                await handle_payment_captured({
-                    "payment": {"entity": razorpay_payment}
-                })
-                reconciled_count += 1
-                logger.info(f"[SUCCESS] Reconciled successful payment: {payment_id}")
-            
-            elif actual_status == "failed":
-                # Mark as failed
-                await payments_collection.update_one(
-                    {"payment_id": payment_id},
-                    {
-                        "$set": {
-                            "status": "failed",
-                            "reconciled_at": datetime.now(timezone.utc),
-                            "error_description": razorpay_payment.get("error_description", "Unknown error")
+        for payment in stuck_payments:
+            try:
+                payment_id = payment.get("payment_id")
+                if not payment_id:
+                    logger.warning(f"Payment {payment.get('_id')} has no payment_id, skipping")
+                    continue
+                
+                # Fetch actual status from Razorpay
+                razorpay_payment = client.payment.fetch(payment_id)
+                actual_status = razorpay_payment.get("status")
+                
+                logger.info(
+                    f"Payment {payment_id}: DB status={payment['status']}, "
+                    f"Razorpay status={actual_status}"
+                )
+                
+                if actual_status == "captured":
+                    # Payment was successful but webhook was missed
+                    from app.api.routes.webhooks import handle_payment_captured
+                    await handle_payment_captured({
+                        "payment": {"entity": razorpay_payment}
+                    })
+                    reconciled_count += 1
+                    logger.info(f"[SUCCESS] Reconciled successful payment: {payment_id}")
+                
+                elif actual_status == "failed":
+                    # Mark as failed
+                    await payments_collection.update_one(
+                        {"payment_id": payment_id},
+                        {
+                            "$set": {
+                                "status": "failed",
+                                "reconciled_at": datetime.now(timezone.utc),
+                                "error_description": razorpay_payment.get("error_description", "Unknown error")
+                            }
                         }
-                    }
-                )
-                failed_count += 1
-                logger.info(f"[FAILED] Marked payment as failed: {payment_id}")
-            
-            elif actual_status == "refunded":
-                # Handle refund
-                await payments_collection.update_one(
-                    {"payment_id": payment_id},
-                    {
-                        "$set": {
-                            "status": "refunded",
-                            "reconciled_at": datetime.now(timezone.utc)
+                    )
+                    failed_count += 1
+                    logger.info(f"[FAILED] Marked payment as failed: {payment_id}")
+                
+                elif actual_status == "refunded":
+                    # Handle refund
+                    await payments_collection.update_one(
+                        {"payment_id": payment_id},
+                        {
+                            "$set": {
+                                "status": "refunded",
+                                "reconciled_at": datetime.now(timezone.utc)
+                            }
                         }
-                    }
-                )
-                logger.info(f"💰 Marked payment as refunded: {payment_id}")
+                    )
+                    logger.info(f"💰 Marked payment as refunded: {payment_id}")
+                
+                else:
+                    # Still pending or other status - log for manual review
+                    logger.warning(
+                        f"Payment {payment_id} has unexpected status: {actual_status}. "
+                        f"Manual review required."
+                    )
             
-            else:
-                # Still pending or other status - log for manual review
-                logger.warning(
-                    f"Payment {payment_id} has unexpected status: {actual_status}. "
-                    f"Manual review required."
+            except razorpay.errors.BadRequestError as e:
+                # Payment ID doesn't exist in Razorpay
+                logger.error(f"Payment {payment.get('payment_id')} not found in Razorpay: {e}")
+            
+            except Exception as e:
+                logger.error(
+                    f"Reconciliation error for payment {payment.get('payment_id')}: {e}",
+                    exc_info=True
                 )
-        
-        except razorpay.errors.BadRequestError as e:
-            # Payment ID doesn't exist in Razorpay
-            logger.error(f"Payment {payment.get('payment_id')} not found in Razorpay: {e}")
-        
-        except Exception as e:
-            logger.error(
-                f"Reconciliation error for payment {payment.get('payment_id')}: {e}",
-                exc_info=True
-            )
     
-    # Log summary
-    logger.info(
-        f"Reconciliation complete: {reconciled_count} reconciled, "
-        f"{failed_count} marked failed, {len(stuck_payments)} total processed"
-    )
+        # Log summary
+        logger.info(
+            f"Reconciliation complete: {reconciled_count} reconciled, "
+            f"{failed_count} marked failed, {len(stuck_payments)} total processed"
+        )
+    finally:
+        await _release_job_lock(lock_client, lock_token)
 
 
 def init_reconciliation_scheduler(app):
@@ -129,6 +178,11 @@ def init_reconciliation_scheduler(app):
     Args:
         app: FastAPI application instance
     """
+    global _scheduler
+    if _scheduler and _scheduler.running:
+        app.state.reconciliation_scheduler = _scheduler
+        return _scheduler
+
     scheduler = AsyncIOScheduler()
     
     # Schedule daily reconciliation at 2 AM IST
@@ -145,5 +199,14 @@ def init_reconciliation_scheduler(app):
     
     scheduler.start()
     logger.info("[SCHEDULER] Payment reconciliation scheduler started (runs daily at 2 AM IST)")
-    
+    _scheduler = scheduler
+    app.state.reconciliation_scheduler = scheduler
     return scheduler
+
+
+def shutdown_reconciliation_scheduler(app) -> None:
+    """Gracefully stop scheduler on app shutdown."""
+    scheduler = getattr(app.state, "reconciliation_scheduler", None) or _scheduler
+    if scheduler and scheduler.running:
+        scheduler.shutdown(wait=False)
+        logger.info("[SCHEDULER] Payment reconciliation scheduler stopped")

@@ -120,6 +120,17 @@ class MongoDB:
         # Payments collection
         await cls.db.payments.create_index("user_id")
         await cls.db.payments.create_index("razorpay_order_id", unique=True, sparse=True)
+        await cls.db.payments.create_index("order_id", unique=True, sparse=True)
+
+        # Payment idempotency store
+        await cls.db.payment_idempotency.create_index("idempotency_key", unique=True)
+        await cls.db.payment_idempotency.create_index(
+            "expires_at",
+            expireAfterSeconds=0
+        )
+
+        # Webhook receipts idempotency index (payment webhooks)
+        await cls.db.webhook_receipts.create_index("event_id", unique=True)
         
         # Sharing collection — unique index for shared trip lookups
         await cls.db.trips.create_index("sharing_id", unique=True, sparse=True)

@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any
 from app.db.mongo import MongoDB
 import hashlib
 import json
+from pymongo.errors import DuplicateKeyError
 
 
 class IdempotencyService:
@@ -62,26 +63,24 @@ class IdempotencyService:
         db = MongoDB.get_db()
         collection = db[cls.COLLECTION_NAME]
         
-        # Check if key exists
-        existing = await collection.find_one({"idempotency_key": idempotency_key})
-        
-        if existing:
-            # Return cached response for duplicate request
-            return existing.get("response")
-        
-        # Store new idempotency record (without response initially)
+        # Store new idempotency record (without response initially). A unique index on
+        # idempotency_key makes this atomic under concurrent requests.
         now = datetime.now(timezone.utc)
-        await collection.insert_one({
-            "idempotency_key": idempotency_key,
-            "user_id": user_id,
-            "request_data": request_data,
-            "created_at": now,
-            "expires_at": now + timedelta(hours=cls.TTL_HOURS),
-            "status": "pending",
-            "response": None
-        })
-        
-        return None
+        try:
+            await collection.insert_one({
+                "idempotency_key": idempotency_key,
+                "user_id": user_id,
+                "request_data": request_data,
+                "created_at": now,
+                "expires_at": now + timedelta(hours=cls.TTL_HOURS),
+                "status": "pending",
+                "response": None
+            })
+            return None
+        except DuplicateKeyError:
+            existing = await collection.find_one({"idempotency_key": idempotency_key})
+            return existing.get("response") if existing else None
+
     
     @classmethod
     async def store_response(
