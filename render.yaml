@@ -8,7 +8,7 @@ services:
     region: oregon
     plan: free
     buildCommand: pip install -r requirements.txt
-    preDeployCommand: python -m pytest tests/smoke -v  # Fast, deterministic deployment smoke gate
+    preDeployCommand: python -m pytest tests/smoke -v && python -c "from app.main import app; print('IMPORT_OK')"  # Fast deploy gate + startup import check
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     rootDir: backend
     # PR2: Enable zero-downtime blue/green deployment
