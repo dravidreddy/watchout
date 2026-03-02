@@ -572,8 +572,8 @@ async def cancel_chat(
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid user")
 
-    supervisor = get_supervisor()
-    cancelled = await supervisor.cancel_user_task(user_id)
+    orchestrator = get_orchestrator()
+    cancelled = await orchestrator.cancel_user_task(user_id)
     return {"status": "cancelled", "success": cancelled}
 
 

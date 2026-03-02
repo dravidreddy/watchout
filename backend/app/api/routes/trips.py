@@ -187,19 +187,6 @@ async def explore_trips(
     return await serialize_cursor(cursor)
 
 
-@router.get("/shared/{sharing_id}", response_model=dict)
-async def get_shared_trip(sharing_id: str):
-    """Get a public trip by its sharing ID (no auth required)."""
-    trips = trips_collection()
-    
-    trip = await trips.find_one({"sharing_id": sharing_id, "is_public": True})
-    
-    if not trip:
-        raise HTTPException(status_code=404, detail="Shared trip not found")
-        
-    return serialize_doc(trip)
-
-
 @router.get("/", response_model=List[dict])
 async def list_trips(
     status: Optional[str] = None,

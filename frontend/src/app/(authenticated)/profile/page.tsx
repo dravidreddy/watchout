@@ -155,7 +155,9 @@ export default function ProfilePage() {
                                     color: 'var(--accent-dark)'
                                 }}
                             >
-                                {user?.subscription_tier === 'premium' ? '⭐ Premium' : '🌱 Free Plan'}
+                                {user?.subscription_tier === 'adventure' || user?.subscription_tier === 'ultimate'
+                                    ? '⭐ Premium'
+                                    : '🌱 Free Plan'}
                             </span>
                         </div>
                     </div>

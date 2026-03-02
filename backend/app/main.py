@@ -14,7 +14,10 @@ from app.core.config import settings
 from app.core.firebase_auth import init_firebase
 from app.db.mongo import MongoDB
 from app.api import api_router
-from app.services.payment_reconciliation import init_reconciliation_scheduler
+from app.services.payment_reconciliation import (
+    init_reconciliation_scheduler,
+    shutdown_reconciliation_scheduler,
+)
 
 
 # Initialize logger
@@ -59,6 +62,7 @@ async def lifespan(app: FastAPI):
     finally:
         # Cleanup on shutdown
         logger.info("[SHUTDOWN] Shutting down...")
+        shutdown_reconciliation_scheduler(app)
         await MongoDB.disconnect()
         logger.info("[SUCCESS] Database connection closed")
 
@@ -180,8 +184,10 @@ _cors_origins = [
     "http://localhost:3001",
     "http://localhost:5173",
     "http://127.0.0.1:3000",
-    "*"  # To support network-attached devices via ip for dev
 ]
+# Only allow wildcard in local development when credentials are not trusted from arbitrary origins.
+if settings.app_env == "development":
+    _cors_origins.append("*")
 # If FRONTEND_URL looks like a domain (not localhost), also allow https variant
 if settings.frontend_url and "localhost" not in settings.frontend_url:
     if not settings.frontend_url.startswith("http"):
@@ -216,12 +222,31 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 @app.middleware("http")
 async def limit_body_size(request: Request, call_next):
     content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > 10_485_760:  # 10 MB
-        return JSONResponse(
-            status_code=413,
-            content={"error": "request_too_large", "message": "Request body must be under 10 MB."},
-        )
+    if content_length:
+        try:
+            if int(content_length) > 10_485_760:  # 10 MB
+                return JSONResponse(
+                    status_code=413,
+                    content={"error": "request_too_large", "message": "Request body must be under 10 MB."},
+                )
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "bad_request", "message": "Invalid Content-Length header."},
+            )
     return await call_next(request)
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    if settings.app_env != "development":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 # Include API routes
 app.include_router(api_router, prefix="/api/v1")
@@ -301,5 +326,5 @@ if __name__ == "__main__":
         "app.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=settings.environment == "development"
+        reload=settings.app_env == "development"
     )

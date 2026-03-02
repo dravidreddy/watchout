@@ -379,7 +379,7 @@ export const api = {
 
 
     // Payments
-    createOrder: (tier: string = 'premium') =>
+    createOrder: (tier: string = 'adventure') =>
         apiRequest<any>('/payments/create-order?tier=' + encodeURIComponent(tier), { method: 'POST' }),
 
     verifyPayment: (data: any) =>
