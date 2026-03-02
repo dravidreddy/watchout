@@ -16,11 +16,23 @@ from fastapi.responses import StreamingResponse
 from app.core.rate_limiter import limiter, RateLimits
 from app.core.firebase_auth import verify_firebase_token
 from app.db.mongo import get_database
-from app.mcp.orchestrator import get_orchestrator
 from app.models.chat import ChatRequest, ChatResponse
 from app.core.token_limiter import current_user_id, check_trip_limit
 
 router = APIRouter()
+
+
+def _get_orchestrator_or_503():
+    """Lazy-load orchestrator so MCP import issues don't crash entire app startup."""
+    try:
+        from app.mcp.orchestrator import get_orchestrator
+        return get_orchestrator()
+    except Exception as exc:
+        logger.error("MCP orchestrator unavailable: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Trip planning service is temporarily unavailable",
+        )
 
 
 async def _generate_trip_title(itinerary: dict, preferences: dict) -> str:
@@ -213,7 +225,7 @@ async def stream_chat(
         assistant_tokens: list[str] = []   # accumulate for persistence
 
         try:
-            orchestrator = get_orchestrator()
+            orchestrator = _get_orchestrator_or_503()
             async for event in orchestrator.process(
                 user_id=user_id,
                 message=chat_request.message,
@@ -572,7 +584,7 @@ async def cancel_chat(
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid user")
 
-    orchestrator = get_orchestrator()
+    orchestrator = _get_orchestrator_or_503()
     cancelled = await orchestrator.cancel_user_task(user_id)
     return {"status": "cancelled", "success": cancelled}
 

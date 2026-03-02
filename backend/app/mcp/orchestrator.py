@@ -20,7 +20,11 @@ import json
 import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from fastmcp import Client
+try:
+    # fastmcp export path can vary between versions
+    from fastmcp import Client
+except Exception:  # pragma: no cover - import-compat fallback
+    from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 
 from app.mcp.server import mcp
