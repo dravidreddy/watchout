@@ -6,50 +6,53 @@
    ============================================ */
 
 :root {
-  /* ── Bharat Voyager Dark Navy / Cyan palette ────────────────── */
-  --bg-primary:   #0D1117;
-  --bg-secondary: #161B22;
-  --bg-tertiary:  #1C2128;
-  --bg-elevated:  #21262D;
+  /* ── Minimalist Cyber / Premium Dark Palette ────────────────── */
+  --bg-primary: #000000;
+  --bg-secondary: #0A0A0A;
+  --bg-tertiary: #111111;
+  --bg-elevated: #161616;
 
-  /* Accent – electric cyan */
-  --accent:       #00D4FF;
-  --accent-light: #33DDFF;
-  --accent-dark:  #0099BB;
-  --accent-50:    rgba(0, 212, 255, 0.12);
-  --accent-100:   rgba(0, 212, 255, 0.25);
-  --accent-glow:  0 0 20px rgba(0, 212, 255, 0.35);
+  /* Accent – High-contrast Electric Cyan to Deep Indigo/Violet */
+  --accent: #0891B2;
+  /* Cyan */
+  --accent-light: #4F46E5;
+  /* Indigo */
+  --accent-dark: #8B5CF6;
+  /* Violet */
+  --accent-50: rgba(8, 145, 178, 0.1);
+  --accent-100: rgba(8, 145, 178, 0.2);
+  --accent-glow: 0 0 24px rgba(8, 145, 178, 0.4);
 
   /* Text */
-  --text-primary:  #F0F6FC;
-  --text-secondary:#8B949E;
-  --text-tertiary: #484F58;
-  --text-inverse:  #0D1117;
+  --text-primary: #FFFFFF;
+  --text-secondary: #A1A1AA;
+  --text-tertiary: #71717A;
+  --text-inverse: #000000;
 
-  /* Borders */
-  --border-subtle:  rgba(0, 212, 255, 0.08);
-  --border-default: rgba(0, 212, 255, 0.18);
+  /* Borders - Ultra subtle for glassmorphism */
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-default: rgba(255, 255, 255, 0.1);
 
   /* Semantic */
-  --success: #3FB950;
-  --warning: #D29922;
-  --error:   #F85149;
+  --success: #10B981;
+  --warning: #F59E0B;
+  --error: #EF4444;
 
-  /* Shadows */
-  --shadow-xs:   0 1px 3px rgba(0,0,0,0.4);
-  --shadow-sm:   0 2px 8px rgba(0,0,0,0.5);
-  --shadow-md:   0 4px 16px rgba(0,0,0,0.6);
-  --shadow-lg:   0 8px 24px rgba(0,0,0,0.7);
-  --shadow-xl:   0 16px 40px rgba(0,0,0,0.8);
-  --shadow-card: 0 0 0 1px var(--border-subtle), 0 8px 24px rgba(0,0,0,0.5);
+  /* Shadows - deep and soft */
+  --shadow-xs: 0 2px 4px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.6);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.7);
+  --shadow-lg: 0 16px 32px rgba(0, 0, 0, 0.8);
+  --shadow-xl: 0 24px 48px rgba(0, 0, 0, 0.9);
+  --shadow-card: 0 0 0 1px var(--border-subtle), 0 12px 32px rgba(0, 0, 0, 0.6);
 
   /* Border Radius */
-  --radius-sm:   0.375rem;
-  --radius-md:   0.5rem;
-  --radius-lg:   0.75rem;
-  --radius-xl:   1rem;
-  --radius-2xl:  1.25rem;
-  --radius-3xl:  1.5rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.5rem;
   --radius-full: 9999px;
 
   /* Spacing */
@@ -60,10 +63,10 @@
   --space-xl: 2rem;
   --space-2xl: 3rem;
 
-  /* Transitions */
-  --transition-fast: 150ms ease;
-  --transition-base: 200ms ease;
-  --transition-slow: 300ms ease;
+  /* Transitions - slightly slower, buttery smooth */
+  --transition-fast: 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-base: 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-slow: 500ms cubic-bezier(0.16, 1, 0.3, 1);
 
   /* Legacy compat */
   --background: var(--bg-primary);
@@ -72,13 +75,13 @@
 
 /* Theme is dark by default — .light class switches to a light variant if needed */
 .light {
-  --bg-primary:   #F6F8FA;
+  --bg-primary: #F6F8FA;
   --bg-secondary: #FFFFFF;
-  --bg-tertiary:  #F0F2F4;
-  --text-primary:  #1F2937;
-  --text-secondary:#6B7280;
+  --bg-tertiary: #F0F2F4;
+  --text-primary: #1F2937;
+  --text-secondary: #6B7280;
   --text-tertiary: #9CA3AF;
-  --shadow-card: 0 4px 20px rgba(0,0,0,0.08);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
 
 /* ============================================
@@ -261,27 +264,27 @@ body {
 }
 
 /* ============================================
-   Glassmorphism – dark navy base
+   Glassmorphism – Heavy Frosted Glass
    ============================================ */
 
 .glass {
-  background: rgba(22, 27, 34, 0.80);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(10, 10, 10, 0.65);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
   border: 1px solid var(--border-subtle);
 }
 
 .glass-elevated {
-  background: rgba(28, 33, 40, 0.90);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: rgba(17, 17, 17, 0.75);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
   border: 1px solid var(--border-default);
 }
 
 .glass-dark {
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
 }
 
 /* ============================================

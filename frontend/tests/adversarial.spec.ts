@@ -106,6 +106,7 @@ test.describe('Scenario A: Flaky Network During SSE Streaming', () => {
         // Inject client-side monitoring
         await page.addInitScript(() => {
             const originalEventSource = window.EventSource;
+            // @ts-ignore
             window.EventSource = class extends originalEventSource {
                 constructor(url: string, config?: EventSourceInit) {
                     super(url, config);
@@ -342,6 +343,7 @@ test.describe('Scenario C: Payment Failure Handling', () => {
         // Mock Razorpay SDK
         await page.addInitScript(() => {
             (window as any).Razorpay = class {
+                options: any;
                 constructor(options: any) {
                     this.options = options;
                 }
@@ -420,6 +422,10 @@ test.describe('Scenario C: Payment Failure Handling', () => {
 
         await page.addInitScript(() => {
             (window as any).Razorpay = class {
+                options: any;
+                constructor(options: any) {
+                    this.options = options;
+                }
                 open() {
                     setTimeout(() => {
                         this.options.handler({
@@ -500,7 +506,7 @@ test.describe('Scenario D: Indian Internet Reality', () => {
         await page2.locator('[placeholder*="dream trip"]').fill('Plan Kerala trip');
         await page2.locator('[placeholder*="dream trip"]').press('Enter');
 
-        await page.waitForTimeout(10000);
+        await page1.waitForTimeout(10000);
 
         // ASSERTION: Each tab should have independent state
         const page1Text = await page1.locator('[class*="assistant"]').last().textContent();

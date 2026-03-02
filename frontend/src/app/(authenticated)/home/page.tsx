@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Bell, User, Search, ArrowRight, MapPin, Star, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { DestinationCard, SeasonalCard } from '@/components/home/DestinationCard';
 import { MoodSelector, MOODS } from '@/components/home/MoodSelector';
@@ -25,12 +26,25 @@ const seasonalPicks = [
 export default function HomePage() {
     const { user } = useAuth();
     const { currentMood } = useMoodStore();
+    const router = useRouter();
     const [searchQuery, setSearchQuery] = useState('');
     const [trending, setTrending] = useState<Destination[]>([]);
     const [nearby, setNearby] = useState<Destination[]>([]);
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showOnboarding, setShowOnboarding] = useState(false);
+
+    const handleSearch = (query: string) => {
+        const q = query.trim();
+        if (!q) return;
+        // AI-style queries (contain words like 'in', 'for', 'trip', 'plan', '?') go to chat
+        const isAiQuery = /\b(trip|plan|itinerary|best|suggest|budget|from|for|\?)/i.test(q);
+        if (isAiQuery) {
+            router.push(`/chat?q=${encodeURIComponent(q)}`);
+        } else {
+            router.push(`/explore?city=${encodeURIComponent(q)}`);
+        }
+    };
 
     const moodInfo = MOODS.find(m => m.id === currentMood);
     const greeting = moodInfo
@@ -178,10 +192,10 @@ export default function HomePage() {
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div
-                            className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold"
-                            style={{ background: 'linear-gradient(135deg, #0891B2 0%, #06B6D4 100%)' }}
+                            className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold shadow-[0_0_20px_rgba(8,145,178,0.3)]"
+                            style={{ background: 'linear-gradient(135deg, #0891B2 0%, #4F46E5 100%)' }}
                         >
-                            B
+                            W
                         </div>
                         <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
                             Watchout
@@ -212,15 +226,22 @@ export default function HomePage() {
                     </h1>
                     <p className="text-sm mb-4" style={{ color: 'var(--text-tertiary)' }}>Where shall we go?</p>
                     <div className="relative">
-                        <Search
-                            className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5"
-                            style={{ color: 'var(--text-tertiary)' }}
-                        />
+                        <button
+                            onClick={() => handleSearch(searchQuery)}
+                            className="absolute left-4 top-1/2 -translate-y-1/2 p-0 bg-transparent border-none cursor-pointer"
+                            aria-label="Search"
+                        >
+                            <Search
+                                className="w-5 h-5 hover:opacity-70 transition-opacity"
+                                style={{ color: 'var(--text-tertiary)' }}
+                            />
+                        </button>
                         <input
                             type="text"
                             placeholder="Destinations, experiences, trips…"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleSearch(searchQuery)}
                             className="input search-input py-4"
                             style={{ paddingLeft: '2.75rem' }}
                         />
@@ -241,7 +262,7 @@ export default function HomePage() {
                             <div
                                 className="card p-6 mb-8 cursor-pointer card-hover-scale"
                                 style={{
-                                    background: 'linear-gradient(135deg, #0891B2 0%, #06B6D4 50%, #0E7490 100%)',
+                                    background: 'linear-gradient(135deg, #0891B2 0%, #4F46E5 100%)',
                                     boxShadow: '0 8px 32px rgba(8, 145, 178, 0.3)'
                                 }}
                             >
@@ -391,7 +412,7 @@ export default function HomePage() {
                 </div>
 
                 {/* Footer */}
-                <footer className="mt-12 pt-6 text-center text-sm" style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+                <footer className="mt-12 pt-6 text-center text-sm" style={{ borderTop: '1px solid var(--border-subtle)' }}>
                     <div className="flex justify-center gap-6 mb-4">
                         <Link href="/privacy" className="hover:underline" style={{ color: 'var(--text-tertiary)' }}>
                             Privacy & Consent

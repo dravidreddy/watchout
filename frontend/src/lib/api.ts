@@ -316,6 +316,9 @@ export const api = {
     searchPlaces: (query: string) =>
         apiRequest<{ results: Place[] }>(`/places/search?query=${encodeURIComponent(query)}`),
 
+    getNearbyPlaces: (lat: number, lng: number, radius: number = 5000, placeType: string = 'tourist_attraction') =>
+        apiRequest<{ results: Place[] }>(`/places/nearby?latitude=${lat}&longitude=${lng}&radius=${radius}&place_type=${placeType}`),
+
     getPlaceDetails: (placeId: string) =>
         apiRequest<Place>(`/places/details/${placeId}`),
 
@@ -504,8 +507,12 @@ export interface Place {
     user_ratings_total?: number;
     price_level?: number;
     types?: string[];
-    opening_hours?: boolean; // is currently open
+    opening_hours?: boolean | string[]; // boolean from search, array of strings from details
     photo_reference?: string;
+    photos?: string[];
+    reviews?: { author: string; rating: number; text: string }[];
+    phone?: string;
+    website?: string;
 }
 
 export interface Destination {
@@ -526,6 +533,7 @@ export interface PlacePrediction {
     place_id: string;
     description: string;
     main_text?: string;
+    types?: string[];
 }
 
 export interface ScreenshotAnalyzeResponse {

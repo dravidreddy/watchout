@@ -41,8 +41,8 @@ export default function RootLayout({
 
         {/* Viewport and display settings */}
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5" />
-        <meta name="theme-color" content="#3b82f6" />
-        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1e40af" />
+        <meta name="theme-color" content="#000000" />
+        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000" />
 
         {/* PWA Manifest */}
         <link rel="manifest" href="/manifest.json" />
@@ -54,7 +54,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
 
         {/* Microsoft Tile */}
-        <meta name="msapplication-TileColor" content="#3b82f6" />
+        <meta name="msapplication-TileColor" content="#000000" />
         <meta name="msapplication-TileImage" content="/icons/icon-144x144.png" />
 
         {/* Favicon */}

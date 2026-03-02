@@ -28,6 +28,16 @@ const nextConfig: NextConfig = {
         hostname: 'maps.googleapis.com',
         pathname: '/maps/api/place/photo/**',
       },
+      {
+        protocol: 'https',
+        hostname: '*.googleusercontent.com',
+        pathname: '**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'streetviewpixels-pa.googleapis.com',
+        pathname: '**',
+      },
     ],
   },
 };

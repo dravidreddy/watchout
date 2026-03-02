@@ -41,6 +41,8 @@ class BudgetRange(str, Enum):
 
 class UserPreferences(BaseModel):
     """User travel preferences."""
+
+    model_config = {"extra": "allow"}
     
     # Destination preferences
     beach_vs_mountain: Optional[str] = Field(
@@ -54,12 +56,15 @@ class UserPreferences(BaseModel):
         description="Preferred language for AI responses"
     )
     
-    # Travel style
-    travel_style: Optional[TravelStyle] = None
-    travel_vibe: Optional[List[TravelVibe]] = Field(default_factory=list)
+    # Travel style — accepts any string so onboarding values like 'relaxing', 'adventure', etc. work
+    travel_style: Optional[str] = None
+    # Travel vibe — accepts any list of strings; mood pill IDs like 'adventurous', 'spiritual', etc.
+    travel_vibe: Optional[List[str]] = Field(default_factory=list)
+    # Current mood pill selected on the home page
+    current_mood: Optional[str] = None
     
-    # Budget
-    budget_range: Optional[BudgetRange] = None
+    # Budget — accepts any string including frontend values like 'mid-range'
+    budget_range: Optional[str] = None
     daily_budget_inr: Optional[int] = Field(
         default=None,
         description="Daily budget in INR"
@@ -76,7 +81,7 @@ class UserPreferences(BaseModel):
     )
     
     # Pace
-    pace_preference: Optional[PacePreference] = None
+    pace_preference: Optional[str] = None
     
     # Transportation
     preferred_transport: Optional[List[str]] = Field(

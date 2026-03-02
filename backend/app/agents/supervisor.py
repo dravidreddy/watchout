@@ -819,7 +819,16 @@ Output ONLY valid JSON matching exactly this structure:
     def _compute_missing_fields(self, preferences: Dict[str, Any]) -> List[str]:
         missing = []
         for f in CRITICAL_FIELDS:
-            if not preferences.get(f):
+            val = preferences.get(f)
+            # For destinations_or_region, also check the 'destinations' key used by clarification agent
+            if f == "destinations_or_region":
+                val = val or preferences.get("destinations")
+                # If user said "surprise me", destinations = ["agent_surprise"] — treat as satisfied
+                if isinstance(val, list) and "agent_surprise" in val:
+                    continue
+                if preferences.get("destination_open"):
+                    continue
+            if not val:
                 missing.append(f)
         return missing
 

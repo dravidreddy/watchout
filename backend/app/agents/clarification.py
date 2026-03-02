@@ -58,7 +58,23 @@ Ask maximum 3 questions at a time. Be conversational and fun!""",
         conversation_history = context.get("conversation_history", [])
         missing_fields = list(context.get("missing_fields", []) or [])
 
-        # ── Pre-fill travel_vibe from current_mood if not yet set ──────────
+        # ── Detect "surprise me" / open destination intent ────────────────
+        # If the user is asking the AI to choose a destination, we should NOT
+        # keep asking them for one. Mark destinations as "agent_surprise" so
+        # the system knows to pick something and move forward.
+        surprise_keywords = [
+            "surprise me", "you decide", "you choose", "suggest a place",
+            "pick a place", "you pick", "anywhere", "somewhere nice",
+            "recommend a destination", "suggest me", "up to you",
+            "no specific", "any place", "you suggest"
+        ]
+        user_lower = user_input.lower()
+        if any(kw in user_lower for kw in surprise_keywords):
+            if not current_prefs.get("destinations"):
+                current_prefs["destinations"] = ["agent_surprise"]
+                current_prefs["destination_open"] = True
+
+        # ── Pre-fill travel_vibe from current_mood if not yet set ──────────────────
         # "current_mood" comes from the Home page mood pill (e.g. "spiritual").
         # We treat it as the seed for travel_vibe so the agent never asks again.
         if current_prefs.get("current_mood") and not current_prefs.get("travel_vibe"):
@@ -192,6 +208,24 @@ Ask maximum 3 questions at a time. Be conversational and fun!""",
         prioritized_missing = self._prioritize_missing_fields(missing_fields or self.required_fields)
         destinations = current_prefs.get("destinations", [])
         is_multi_city = isinstance(destinations, list) and len(destinations) > 1
+        is_surprise = current_prefs.get("destination_open") or (
+            isinstance(destinations, list) and "agent_surprise" in destinations
+        )
+
+        surprise_section = ""
+        if is_surprise:
+            surprise_section = """
+<surprise_destination_mode>
+The user has asked YOU to choose a destination for them. Do NOT ask them again.
+You MUST:
+1. Pick a specific, wonderful destination that fits their vibe/budget/duration
+2. Tell them why you chose it with genuine enthusiasm
+3. Set destinations = ["<the city you picked>"] in the preferences output
+4. Proceed as if they said "let's go to <city>"
+Example: "Ooh, a surprise trip — my kind of request! 🎉 Given your mid-range budget and love for beaches, 
+I'm sending you to Goa! Perfect for a relaxed 3-day getaway..."
+</surprise_destination_mode>
+"""
 
         multi_city_section = ""
         if is_multi_city:
@@ -229,7 +263,7 @@ Already captured from this conversation:
 Fields still needed (highest priority listed first):
 {prioritized_missing}
 </what_you_know_already>
-{multi_city_section}
+{surprise_section}{multi_city_section}
 <how_to_respond>
 STEP 1 — EXTRACT DEEPLY:
 Read the ENTIRE conversation above. Update 'preferences' with anything the user mentioned, even indirectly:
@@ -240,6 +274,7 @@ Read the ENTIRE conversation above. Update 'preferences' with anything the user 
 - "beach holiday", "chill trip", "relaxed" → pace = "relaxed", travel_vibe = ["leisure", "beach"]
 - "adventure", "trekking", "outdoors" → travel_vibe = ["adventure"]
 - "romantic getaway" → travel_vibe = ["romantic"]
+- "surprise me", "you decide", "suggest a place" etc → pick a great destination yourself, do NOT ask them!
 Never ignore these signals just because they weren't in a formal field.
 
 STEP 2 — ASSESS WHAT'S TRULY MISSING:
@@ -247,6 +282,7 @@ After extracting from the full conversation, what is GENUINELY still unknown and
 Priority: destination (most critical) → duration → number of travelers → budget → vibe (can usually be inferred)
 For multi-city trips: also need per-city day splits in city_segments[].
 If vibe can be inferred from their language, do NOT ask for it.
+If the user said "surprise me" or "you choose", you already have a destination — don't ask again!
 
 STEP 3 — WRITE A WARM RESPONSE:
 - Ask for at most 2 things at a time, and ONLY things that are truly critical and unknown

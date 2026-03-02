@@ -2,13 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Briefcase, Compass, User, Plus, MessageSquare, MessageSquarePlus } from 'lucide-react';
+import { Home, Briefcase, Compass, User, Plus, MessageSquarePlus } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 const tabs = [
     { name: 'Home', href: '/home', icon: Home },
-    { name: 'Active Chat', href: '/chat', icon: MessageSquarePlus },
-    { name: 'History', href: '/chats', icon: MessageSquare },
+    { name: 'Chat', href: '/chat', icon: MessageSquarePlus },
     { name: 'Trips', href: '/trips', icon: Briefcase },
     { name: 'Explore', href: '/explore', icon: Compass },
     { name: 'Profile', href: '/profile', icon: User },
@@ -54,8 +53,7 @@ export function BottomNav() {
             {/* Bottom Navigation Bar */}
             <nav className="fixed bottom-0 left-0 right-0 z-40 glass safe-area-inset-bottom md:hidden"
                 style={{
-                    borderTop: '1px solid rgba(0,0,0,0.05)',
-                    background: 'rgba(255, 255, 255, 0.95)'
+                    borderTop: '1px solid var(--border-subtle)'
                 }}>
                 <div className="relative flex justify-around items-center h-16 max-w-md mx-auto px-2">
                     {/* Active indicator */}

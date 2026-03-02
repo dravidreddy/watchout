@@ -39,7 +39,9 @@ export function PlaceCard({ place, onClick }: PlaceCardProps) {
                     alt={name}
                     fill
                     sizes="(max-width: 768px) 100vw, 400px"
+                    unoptimized
                     className="object-cover group-hover:scale-105 transition-transform duration-500"
+                    onError={(e) => { (e.target as HTMLImageElement).src = placeholderImage; }}
                 />
                 {opening_hours !== undefined && (
                     <div className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-medium ${opening_hours

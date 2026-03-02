@@ -2,13 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Briefcase, Compass, User, HelpCircle, Plus, MessageSquare, MessageSquarePlus } from 'lucide-react';
+import { Home, Briefcase, Compass, User, HelpCircle, Plus, MessageSquarePlus } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const navItems = [
     { name: 'Home', href: '/home', icon: Home },
-    { name: 'Active Chat', href: '/chat', icon: MessageSquarePlus },
-    { name: 'History', href: '/chats', icon: MessageSquare },
+    { name: 'Chat', href: '/chat', icon: MessageSquarePlus },
     { name: 'Trips', href: '/trips', icon: Briefcase },
     { name: 'Explore', href: '/explore', icon: Compass },
     { name: 'Profile', href: '/profile', icon: User },
@@ -64,19 +63,19 @@ export function Sidebar() {
             className="hidden md:flex flex-col w-64 h-screen fixed left-0 top-0 z-30"
             style={{
                 background: 'var(--bg-secondary)',
-                borderRight: '1px solid rgba(0,0,0,0.05)'
+                borderRight: '1px solid var(--border-subtle)'
             }}
         >
             {/* Logo */}
             <div className="p-6 pb-4">
                 <Link href="/home" className="flex items-center gap-3">
                     <div
-                        className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-lg"
+                        className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-[0_0_20px_rgba(8,145,178,0.3)]"
                         style={{
-                            background: 'linear-gradient(135deg, #0891B2 0%, #06B6D4 100%)'
+                            background: 'linear-gradient(135deg, #0891B2 0%, #4F46E5 100%)'
                         }}
                     >
-                        B
+                        W
                     </div>
                     <div>
                         <h1 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -97,8 +96,8 @@ export function Sidebar() {
                         whileTap={{ scale: 0.98 }}
                         className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white font-medium"
                         style={{
-                            background: 'linear-gradient(135deg, #0891B2 0%, #06B6D4 100%)',
-                            boxShadow: '0 4px 12px rgba(8, 145, 178, 0.3)'
+                            background: 'linear-gradient(135deg, #0891B2 0%, #4F46E5 100%)',
+                            boxShadow: '0 4px 20px rgba(8, 145, 178, 0.3)'
                         }}
                     >
                         <Plus className="w-5 h-5" />
@@ -118,7 +117,7 @@ export function Sidebar() {
 
             {/* Bottom Items */}
             <div className="px-3 pb-6 mt-auto">
-                <div className="pt-4" style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+                <div className="pt-4" style={{ borderTop: '1px solid var(--border-subtle)' }}>
                     {bottomItems.map((item) => (
                         <NavLink key={item.name} item={item} />
                     ))}
