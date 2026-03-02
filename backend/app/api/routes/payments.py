@@ -8,9 +8,10 @@ from datetime import datetime, timezone
 import structlog
 
 from app.core.firebase_auth import verify_firebase_token
-from app.db.mongo import users_collection, MongoDB
+from app.db.mongo import MongoDB
 from app.core.config import settings
 from app.services.idempotency_service import IdempotencyService
+from app.core.rate_limiter import limiter, RateLimits
 
 logger = structlog.get_logger(__name__)
 
@@ -42,10 +43,11 @@ def get_razorpay_client():
     return _razorpay_client
 
 @router.post("/create-order")
+@limiter.limit(RateLimits.PAYMENT_CREATE)
 async def create_order(
     request: Request,
     currency: str = "INR",
-    tier: str = "premium",
+    tier: str = "adventure",
     idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
     token_data: dict = Depends(verify_firebase_token)
 ):
@@ -130,6 +132,7 @@ async def create_order(
 
 
 @router.post("/verify")
+@limiter.limit(RateLimits.PAYMENT_VERIFY)
 async def verify_payment(
     request: Request,
     token_data: dict = Depends(verify_firebase_token)
@@ -147,12 +150,20 @@ async def verify_payment(
     3. Return "processing" status immediately
     4. Webhook handler (payment.captured) or reconciliation job completes the update
     """
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
     
     razorpay_order_id = data.get("razorpay_order_id")
     razorpay_payment_id = data.get("razorpay_payment_id")
     razorpay_signature = data.get("razorpay_signature")
-    plan_id = data.get("plan_id", "adventure")
+
+    if not razorpay_order_id or not razorpay_payment_id or not razorpay_signature:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing required payment verification fields"
+        )
 
     params_dict = {
         'razorpay_order_id': razorpay_order_id,
@@ -160,10 +171,12 @@ async def verify_payment(
         'razorpay_signature': razorpay_signature
     }
 
-    # Skip signature verification for test keys — test payments use fake signatures
+    # Only skip signature verification for explicit local development using Razorpay test keys.
+    # In staging/production this must always be verified.
     is_test_mode = (settings.razorpay_key_id or "").startswith("rzp_test_")
+    skip_signature_check = (settings.app_env == "development" and is_test_mode)
 
-    if not is_test_mode:
+    if not skip_signature_check:
         try:
             get_razorpay_client().utility.verify_payment_signature(params_dict)
         except Exception:
@@ -172,6 +185,37 @@ async def verify_payment(
 
     try:
         user_id = token_data["uid"]
+        client = get_razorpay_client()
+
+        # Always derive trusted payment details from Razorpay APIs, not from client request body.
+        razorpay_payment = client.payment.fetch(razorpay_payment_id)
+        if not razorpay_payment:
+            raise HTTPException(status_code=400, detail="Payment not found")
+
+        if razorpay_payment.get("order_id") != razorpay_order_id:
+            raise HTTPException(status_code=400, detail="Payment/order mismatch")
+
+        payment_status = razorpay_payment.get("status")
+        if payment_status not in {"authorized", "captured"}:
+            raise HTTPException(status_code=400, detail=f"Payment is not successful: {payment_status}")
+
+        razorpay_order = client.order.fetch(razorpay_order_id)
+        if not razorpay_order:
+            raise HTTPException(status_code=400, detail="Order not found")
+
+        notes = razorpay_order.get("notes") or {}
+        order_user_id = notes.get("user_id")
+        order_tier = notes.get("tier")
+
+        if not order_user_id or order_user_id != user_id:
+            raise HTTPException(status_code=403, detail="Order does not belong to authenticated user")
+
+        if order_tier not in TIER_PRICES:
+            raise HTTPException(status_code=400, detail="Invalid subscription tier in order metadata")
+
+        expected_amount = TIER_PRICES[order_tier]
+        if int(razorpay_order.get("amount", 0)) != expected_amount:
+            raise HTTPException(status_code=400, detail="Order amount mismatch for requested tier")
         
         db = MongoDB.get_db()
         payments_collection = db["payments"]
@@ -183,10 +227,15 @@ async def verify_payment(
             {
                 "$set": {
                     "payment_id": razorpay_payment_id,
-                    "status": "captured",
+                    "order_id": razorpay_order_id,
+                    "razorpay_order_id": razorpay_order_id,
+                    "status": payment_status,
                     "authorized_at": datetime.now(timezone.utc),
                     "user_id": user_id,
-                    "tier": plan_id,
+                    "tier": order_tier,
+                    "amount": razorpay_order.get("amount"),
+                    "currency": razorpay_order.get("currency"),
+                    "verified_at": datetime.now(timezone.utc),
                     "created_at": datetime.now(timezone.utc)
                 }
             },
@@ -200,7 +249,7 @@ async def verify_payment(
             {"firebase_id": user_id},
             {
                 "$set": {
-                    "subscription_tier": plan_id,
+                    "subscription_tier": order_tier,
                     "subscription_activated_at": datetime.now(timezone.utc),
                     "updated_at": datetime.now(timezone.utc),
                 }
@@ -212,13 +261,13 @@ async def verify_payment(
         
         logger.info(
             f"Payment captured & subscription activated: "
-            f"{user_id} -> {plan_id}, payment_id: {razorpay_payment_id}"
+            f"{user_id} -> {order_tier}, payment_id: {razorpay_payment_id}"
         )
         
         return {
             "status": "success",
-            "tier": plan_id,
-            "message": f"Your subscription has been upgraded to {plan_id}!",
+            "tier": order_tier,
+            "message": f"Your subscription has been upgraded to {order_tier}!",
             "payment_id": razorpay_payment_id
         }
         

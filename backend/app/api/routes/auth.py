@@ -15,7 +15,9 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 @router.post("/login", response_model=UserResponse)
+@limiter.limit(RateLimits.LOGIN)
 async def login_user(
+    request: Request,
     user_data: UserCreate,
     token_data: dict = Depends(verify_firebase_token)
 ):
@@ -109,7 +111,14 @@ async def update_user_profile(
     if update_data.preferences is not None:
         update_doc["preferences"] = update_data.preferences.model_dump()
     if update_data.subscription_tier is not None:
-        update_doc["subscription_tier"] = update_data.subscription_tier
+        # Never allow self-upgrades from this generic profile endpoint.
+        # Paid tier changes must come from server-verified payment flows.
+        if update_data.subscription_tier != "free":
+            raise HTTPException(
+                status_code=403,
+                detail="Subscription upgrades must be completed via payment verification."
+            )
+        update_doc["subscription_tier"] = "free"
     
     result = await users.find_one_and_update(
         {"firebase_id": token_data["uid"]},

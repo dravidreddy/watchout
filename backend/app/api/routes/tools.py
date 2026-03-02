@@ -1,20 +1,21 @@
 import base64
-import logging
 import json
+import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Body, Response
-from pydantic import BaseModel
-from openai import AsyncOpenAI
+from fastapi import APIRouter, HTTPException, Response, Request, Depends
+from pydantic import BaseModel, Field
 
 from app.core.config import settings
+from app.core.firebase_auth import verify_firebase_token
+from app.core.rate_limiter import limiter
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tools", tags=["Tools"])
 
 class ScreenshotAnalyzeRequest(BaseModel):
-    image_base64: str
+    image_base64: str = Field(..., max_length=6_000_000)
 
 class ScreenshotAnalyzeResponse(BaseModel):
     status: str
@@ -24,13 +25,18 @@ class ScreenshotAnalyzeResponse(BaseModel):
 
 @router.options("/analyze-screenshot")
 async def analyze_screenshot_options(response: Response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Origin"] = settings.frontend_url
     response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-Timezone-Offset, X-Timezone-Id, X-Test-Bypass-Token"
     return {}
 
 @router.post("/analyze-screenshot", response_model=ScreenshotAnalyzeResponse)
-async def analyze_screenshot(request: ScreenshotAnalyzeRequest):
+@limiter.limit("8/minute")
+async def analyze_screenshot(
+    request: Request,
+    payload: ScreenshotAnalyzeRequest,
+    _token_data: dict = Depends(verify_firebase_token),
+):
     """
     Analyzes an uploaded screenshot using Google Gemini 1.5 Flash 
     to extract travel destinations, landmarks, and context.
@@ -46,9 +52,17 @@ async def analyze_screenshot(request: ScreenshotAnalyzeRequest):
         genai.configure(api_key=settings.gemini_api_key)
         
         # Clean the base64 string if it contains the data uri prefix e.g 'data:image/jpeg;base64,'
-        img_data = request.image_base64
+        img_data = payload.image_base64
         if ',' in img_data:
             img_data = img_data.split(',')[1]
+
+        # Validate base64 and enforce a hard decoded-size cap to prevent memory abuse.
+        try:
+            decoded = base64.b64decode(img_data, validate=True)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid base64 image payload")
+        if len(decoded) > 4_000_000:
+            raise HTTPException(status_code=413, detail="Image payload too large (max 4MB)")
 
         prompt = (
             "You are an expert travel destination identifier. "
@@ -62,7 +76,7 @@ async def analyze_screenshot(request: ScreenshotAnalyzeRequest):
         
         image_part = {
             "mime_type": "image/jpeg",
-            "data": img_data
+            "data": base64.b64encode(decoded).decode("utf-8")
         }
         
         response = await model.generate_content_async([prompt, image_part])
@@ -75,7 +89,6 @@ async def analyze_screenshot(request: ScreenshotAnalyzeRequest):
         elif result_json_str.startswith("```"):
             result_json_str = result_json_str[3:-3]
             
-        import json
         result = json.loads(result_json_str.strip())
 
         return ScreenshotAnalyzeResponse(
