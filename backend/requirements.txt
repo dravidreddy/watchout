@@ -19,21 +19,22 @@ openai>=1.12.0
 langchain>=0.1.0
 langgraph>=0.0.10
 tavily-python>=0.3.0
-fastmcp
+fastmcp==3.0.2
 
 # Embeddings (disabled for free-tier deployment - uses fallback text search)
 numpy>=1.26.0
 # sentence-transformers>=2.3.0
 
 # HTTP & APIs
-httpx>=0.26.0
+# fastmcp 3.x depends on modern httpx; keep this compatible for clean installs.
+httpx>=0.28.1
 aiohttp>=3.9.0
 
 # Razorpay
 razorpay>=1.4.0
 
 # PDF Generation
-pyppeteer>=2.0.0
+playwright>=1.58.0
 jinja2>=3.1.0
 
 # Utilities
@@ -55,7 +56,6 @@ prometheus-fastapi-instrumentator>=6.1.0
 # Testing
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
-httpx==0.27.0
 # starlette managed by fastapi
 
 # Security
