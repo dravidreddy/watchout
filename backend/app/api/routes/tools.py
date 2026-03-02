@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Response, Depends
+from fastapi import APIRouter, HTTPException, Response, Request, Depends
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
@@ -33,6 +33,7 @@ async def analyze_screenshot_options(response: Response):
 @router.post("/analyze-screenshot", response_model=ScreenshotAnalyzeResponse)
 @limiter.limit("8/minute")
 async def analyze_screenshot(
+    request: Request,
     payload: ScreenshotAnalyzeRequest,
     _token_data: dict = Depends(verify_firebase_token),
 ):
