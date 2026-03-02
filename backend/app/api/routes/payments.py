@@ -45,7 +45,6 @@ def get_razorpay_client():
 @router.post("/create-order")
 @limiter.limit(RateLimits.PAYMENT_CREATE)
 async def create_order(
-    request: Request,
     currency: str = "INR",
     tier: str = "adventure",
     idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
