@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 try:
@@ -536,14 +537,124 @@ def _assemble_itinerary(
 
 
 
+def _extract_hour(time_text: str) -> Optional[int]:
+    match = re.search(r"(\d{1,2})", time_text or "")
+    if not match:
+        return None
+    hour = int(match.group(1))
+    if 0 <= hour <= 23:
+        return hour
+    return None
+
+
+def _day_part(time_text: str) -> str:
+    hour = _extract_hour(time_text)
+    if hour is None:
+        return "afternoon"
+    if hour < 12:
+        return "morning"
+    if hour < 17:
+        return "afternoon"
+    return "evening"
+
+
+def _stop_line(stop: Dict[str, Any]) -> str:
+    name = str(stop.get("name") or "Local highlight").strip()
+    details: List[str] = []
+    when = str(stop.get("time") or stop.get("arrival_time") or "").strip()
+    if when:
+        details.append(when)
+    tip = str(stop.get("description") or stop.get("tips") or "").strip()
+    if tip:
+        details.append(tip)
+    if details:
+        return f"{name} ({'; '.join(details)})"
+    return name
+
+
+def _format_stay_hint(raw_stay: Any) -> str:
+    if isinstance(raw_stay, str):
+        text = raw_stay.strip()
+        return text if text else "Flexible by preference"
+    if isinstance(raw_stay, dict):
+        for key in ("name", "hotel", "neighborhood", "area", "recommendation"):
+            value = raw_stay.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return "Flexible by preference"
+
+
 def _summary_message(segments: List[CitySegment], itinerary: Dict) -> str:
-    cities = " → ".join(s.city for s in segments)
-    total = sum(s.days for s in segments)
-    return (
-        f"✨ Your **{total}-day {cities}** itinerary is ready! "
-        f"I've planned each day, found stays, local food spots, and mapped the routes between cities. "
-        f"Check the itinerary panel on the right 👉"
-    )
+    days = itinerary.get("days") if isinstance(itinerary, dict) else []
+    if not isinstance(days, list):
+        days = []
+
+    cities_from_itinerary = itinerary.get("cities") if isinstance(itinerary, dict) else None
+    if isinstance(cities_from_itinerary, list) and cities_from_itinerary:
+        city_names = [str(c).strip() for c in cities_from_itinerary if str(c).strip()]
+    else:
+        city_names = [s.city for s in segments if s.city]
+
+    total_days = itinerary.get("num_days") if isinstance(itinerary, dict) else None
+    try:
+        total_days = int(total_days)
+    except Exception:
+        total_days = len(days) if days else sum(max(1, s.days) for s in segments)
+    if total_days <= 0:
+        total_days = len(days) or 1
+
+    if city_names:
+        route_title = " + ".join(city_names[:2]) + (f" + {len(city_names) - 2} more" if len(city_names) > 2 else "")
+    else:
+        route_title = "India"
+
+    lines: List[str] = [f"# ✈️ {total_days}-Day {route_title} Itinerary", ""]
+
+    if not days:
+        lines.append("I have generated your trip structure and saved it in the itinerary panel.")
+        lines.append("Open the itinerary panel to review and refine each day.")
+        return "\n".join(lines)
+
+    for index, day in enumerate(days, start=1):
+        if not isinstance(day, dict):
+            continue
+        day_number = day.get("day_number") or index
+        city = str(day.get("city") or "Destination").strip()
+        theme = str(day.get("theme") or city).strip()
+
+        morning: List[str] = []
+        afternoon: List[str] = []
+        evening: List[str] = []
+
+        day_budget = 0
+        raw_stops = day.get("stops")
+        stops = raw_stops if isinstance(raw_stops, list) else []
+        for stop in stops:
+            if not isinstance(stop, dict):
+                continue
+            bucket = _day_part(str(stop.get("time") or stop.get("arrival_time") or ""))
+            text = _stop_line(stop)
+            if bucket == "morning":
+                morning.append(text)
+            elif bucket == "evening":
+                evening.append(text)
+            else:
+                afternoon.append(text)
+            try:
+                day_budget += int(stop.get("estimated_cost") or 0)
+            except Exception:
+                pass
+
+        lines.append(f"## Day {day_number} - {theme}")
+        lines.append(f"- Morning: {', '.join(morning) if morning else 'Slow start and local breakfast walk'}")
+        lines.append(f"- Afternoon: {', '.join(afternoon) if afternoon else 'Core sightseeing and local experiences'}")
+        lines.append(f"- Evening: {', '.join(evening) if evening else 'Relaxed dinner and easy night plan'}")
+        lines.append(f"- Budget estimate: INR {max(day_budget, 0):,}")
+        lines.append(f"- Stay suggestion: {_format_stay_hint(day.get('stay'))}")
+        lines.append("")
+
+    lines.append("If you want, I can now rebalance this for tighter budget, slower pace, or nightlife focus.")
+    return "\n".join(lines).strip()
 
 
 # Backward-compatible accessor used by chat.py

@@ -26,7 +26,9 @@ Key information to gather:
 - Budget range (budget, mid-range, luxury)
 - Travel vibe (adventure, relaxation, cultural, party, romantic)
 
-Ask maximum 3 questions at a time. Be conversational and fun!""",
+Ask one primary question at a time with clear options.
+Use this rhythm: short context sentence, one clear question, numbered options, gentle CTA.
+Be conversational, concise, and never robotic.""",
             model_type="main"  # Use main model for preference understanding
         )
         
@@ -173,11 +175,18 @@ Ask maximum 3 questions at a time. Be conversational and fun!""",
 
         # Fallback
         return {
-            "assistant_message": "I'd love to help you plan your trip! Could you tell me where you'd like to go and for how long?",
+            "assistant_message": (
+                "To personalize this properly, I need one quick detail.\n"
+                "Which destination should I plan first?\n"
+                "1. I already have a city in mind\n"
+                "2. Suggest a destination for me\n"
+                "3. I want a multi-city route\n"
+                "Reply with the option number, and I will take it from there."
+            ),
             "preferences": current_prefs,
             "missing_fields": self.required_fields,
             "is_complete": False,
-            "response": "Could you tell me where you'd like to go?",
+            "response": "What destination are you thinking about?",
             "data": {},
             "error": "Failed to generate structured response"
         }

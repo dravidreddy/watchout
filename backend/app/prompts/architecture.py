@@ -243,15 +243,27 @@ Missing fields (priority order):
             """
 Infer when signals are strong (for example couple trip, budget sensitivity, relaxed pace).
 Do not ask for information already present in conversation history.
-Ask for at most two missing critical items.
+Ask one critical question at a time.
+Only ask two items together when they are tightly coupled (for example start_date + duration_days).
+If you ask a question, provide 2-4 concise options the user can pick from.
+Never ask the same field twice once it is already known.
 If enough data exists to proceed, mark is_complete=true.
+Do not ask multi-part bundled questions like "dates and budget and vibe?".
             """,
         ),
         _section(
             "output_required",
             """
 Return keys: assistant_message, preferences, missing_fields, is_complete.
-assistant_message must be warm, natural, and concise.
+assistant_message style contract:
+- Use this structure exactly:
+  1) one short context sentence
+  2) one clear question sentence
+  3) numbered options (1., 2., 3.) when options exist
+  4) one gentle call-to-action sentence
+- Keep total length under 95 words.
+- Tone must feel natural and professional, never robotic.
+- Avoid redundancy and avoid "anything else?" endings.
             """,
         ),
     )
@@ -320,6 +332,10 @@ Use this place context when useful:
             """
 Each activity must include specific time, duration_minutes, category, and practical tip.
 Meals should include concrete dish or place style, not generic placeholders.
+Keep each day internally balanced: morning, afternoon, evening flow.
+Ensure each day has enough detail to render:
+- budget estimate signals from activity estimated_cost values
+- at least one practical stay or area hint per city segment when possible
             """,
         ),
     )
@@ -686,6 +702,7 @@ Specialist outputs:
 2) Key recommendations with practical detail.
 3) Optional one-step next action.
 Do not ask unnecessary follow-up questions.
+Never reveal internal reasoning traces. Give concise rationale only.
             """,
         ),
     )

@@ -216,28 +216,71 @@ Output structured itineraries with specific times and durations.""",
         )
     
     def _generate_summary(self, plan: Dict[str, Any]) -> str:
-        """Generate a friendly summary of the itinerary."""
-        title = plan.get("title", "Your Adventure")
-        days = len(plan.get("days", []))
-        highlights = plan.get("highlights", [])
-        budget = plan.get("total_estimated_budget", 0)
-        
-        summary = f"""**{title}**
+        """Generate premium markdown summary in a stable day-by-day format."""
+        title = plan.get("title", "Trip Plan")
+        raw_days = plan.get("days", [])
+        days = raw_days if isinstance(raw_days, list) else []
+        total_days = len(days) if days else int(plan.get("num_days") or 1)
 
-I've crafted a {days}-day adventure for you!
+        lines = [f"# ✈️ {total_days}-Day {title} Itinerary", ""]
 
-**Highlights:**
-"""
-        
-        for highlight in highlights[:5]:
-            summary += f"- {highlight}\n"
-        
-        if budget:
-            summary += f"\n**Estimated Budget:** INR {budget:,}"
-        
-        summary += "\n\nScroll down to see the detailed day-by-day plan!"
-        
-        return summary
+        for idx, day in enumerate(days, start=1):
+            if not isinstance(day, dict):
+                continue
+            day_number = day.get("day_number") or idx
+            day_label = day.get("theme") or day.get("city") or "Highlights"
+            activities = day.get("activities") if isinstance(day.get("activities"), list) else []
+
+            morning: List[str] = []
+            afternoon: List[str] = []
+            evening: List[str] = []
+            day_budget = 0
+
+            for activity in activities:
+                if not isinstance(activity, dict):
+                    continue
+                name = str(activity.get("name") or "Activity").strip()
+                time_text = str(activity.get("time") or "").strip()
+                hour = None
+                if ":" in time_text:
+                    try:
+                        hour = int(time_text.split(":")[0])
+                    except Exception:
+                        hour = None
+                if hour is None:
+                    bucket = "afternoon"
+                elif hour < 12:
+                    bucket = "morning"
+                elif hour < 17:
+                    bucket = "afternoon"
+                else:
+                    bucket = "evening"
+
+                if bucket == "morning":
+                    morning.append(name)
+                elif bucket == "evening":
+                    evening.append(name)
+                else:
+                    afternoon.append(name)
+
+                try:
+                    day_budget += int(activity.get("estimated_cost") or 0)
+                except Exception:
+                    pass
+
+            lines.append(f"## Day {day_number} - {day_label}")
+            lines.append(f"- Morning: {', '.join(morning) if morning else 'Easy local start'}")
+            lines.append(f"- Afternoon: {', '.join(afternoon) if afternoon else 'Core sightseeing'}")
+            lines.append(f"- Evening: {', '.join(evening) if evening else 'Dinner and downtime'}")
+            lines.append(f"- Budget estimate: INR {max(day_budget, 0):,}")
+            lines.append("- Stay suggestion: Near the main day activities for easy transfers")
+            lines.append("")
+
+        total_budget = plan.get("total_estimated_budget")
+        if total_budget:
+            lines.append(f"**Trip budget estimate:** INR {int(total_budget):,}")
+
+        return "\n".join(lines).strip()
     
     async def regenerate_day(
         self,
