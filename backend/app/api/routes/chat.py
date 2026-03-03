@@ -335,7 +335,7 @@ async def stream_chat(
             logger.error(
                 "Orchestrator stream error for user %s: %s", user_id, e, exc_info=True
             )
-            yield f"data: {json.dumps({'type': 'error', 'error': str(e) or repr(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'error': 'Sorry, I hit a temporary issue while planning your trip. Please try again.'})}\n\n"
 
 
     async def merged_generator() -> AsyncGenerator[str, None]:

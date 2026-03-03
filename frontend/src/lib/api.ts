@@ -118,11 +118,16 @@ export async function streamRequest(
         if (attempt > 0) {
             const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 30_000);
             await new Promise<void>((resolve, reject) => {
-                const id = setTimeout(resolve, delayMs);
-                signal?.addEventListener('abort', () => {
+                const onAbort = () => {
                     clearTimeout(id);
+                    signal?.removeEventListener('abort', onAbort);
                     reject(new DOMException('Aborted', 'AbortError'));
-                }, { once: true });
+                };
+                const id = setTimeout(() => {
+                    signal?.removeEventListener('abort', onAbort);
+                    resolve();
+                }, delayMs);
+                signal?.addEventListener('abort', onAbort, { once: true });
             });
         }
 
@@ -178,13 +183,14 @@ export async function streamRequest(
                 lineBuffer = lines.pop() || '';
 
                 for (const line of lines) {
+                    const normalizedLine = line.trimEnd();
                     // Skip heartbeat comments (AR6 backend keepalive pings)
-                    if (line.startsWith(':')) {
+                    if (normalizedLine.startsWith(':')) {
                         continue;
                     }
 
-                    if (line.startsWith('data: ')) {
-                        const data = line.slice(6);
+                    if (normalizedLine.startsWith('data:')) {
+                        const data = normalizedLine.slice(5).trimStart();
                         if (data === '[DONE]') {
                             // Flush buffer before completing
                             if (sentenceBuffer.trim()) {
