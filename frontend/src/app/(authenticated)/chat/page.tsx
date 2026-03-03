@@ -1,8 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Loader2, ArrowLeft, Sparkles, MapPin, Route, Cloud, CheckCircle, History, Image as ImageIcon, Pencil, Trash2 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
+import { useState, useRef, useEffect, useCallback, memo } from 'react';
+import { Send, Loader2, ArrowLeft, Sparkles, MapPin, History, Image as ImageIcon, Pencil, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useChatStore, ChatMessage, useMoodStore } from '@/lib/store';
 import { streamRequest, StreamEvent, api, analyzeScreenshot } from '@/lib/api';
@@ -12,15 +11,20 @@ import { toast } from 'sonner';
 import { ItineraryModal } from '@/components/chat/ItineraryModal';
 import { ChatHistory } from '@/components/chat/ChatHistory';
 import { ConfirmationCard } from '@/components/chat/ConfirmationCard';
+import { MarkdownRenderer } from '@/components/chat/MarkdownRenderer';
+import { normalizeItinerary } from '@/lib/itinerary';
 
-// Streaming status stages
-const streamingStages = [
-    { id: 'clarify', label: 'Clarifying preferences', icon: Sparkles },
-    { id: 'build', label: 'Building itinerary', icon: MapPin },
-    { id: 'routes', label: 'Computing routes', icon: Route },
-    { id: 'weather', label: 'Checking weather', icon: Cloud },
-    { id: 'finalize', label: 'Finalizing', icon: CheckCircle },
-];
+const STREAM_ERROR_FALLBACK = 'Sorry, something went wrong while generating your plan. Please try again.';
+
+const sanitizeStreamError = (value?: string): string => {
+    const text = (value || '').trim();
+    if (!text) return STREAM_ERROR_FALLBACK;
+
+    const looksInternal = /traceback|exception|stack|line \d+|file\s+\"|sql|mongodb|fastapi/i.test(text);
+    if (looksInternal) return STREAM_ERROR_FALLBACK;
+
+    return text.length > 180 ? `${text.slice(0, 177)}...` : text;
+};
 
 export default function ChatPage() {
     const { user } = useAuth();
@@ -28,23 +32,21 @@ export default function ChatPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [input, setInput] = useState('');
-    const [currentStage, setCurrentStage] = useState<string | null>(null);
-    const [isSaving, setIsSaving] = useState(false);
     const [savedTripId, setSavedTripId] = useState<string | null>(null);
     const [showItineraryModal, setShowItineraryModal] = useState(false);
     const [showChatHistory, setShowChatHistory] = useState(false);
     const [pendingConfirmation, setPendingConfirmation] = useState<Record<string, any> | null>(null);
-    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const messagesContainerRef = useRef<HTMLDivElement>(null);
+    const shouldAutoScrollRef = useRef(true);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const hasGreeted = useRef(false);
-    const hasAutoSaved = useRef(false);
     const isExplicitNewChat = useRef(false);
 
     const {
         messages,
         isStreaming,
-        currentAgent,
         currentStatus,
+        activeTripId,
         addMessage,
         appendToLastMessage,
         setStreaming,
@@ -63,13 +65,29 @@ export default function ChatPage() {
     } = useChatStore();
 
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
+        const container = messagesContainerRef.current;
+        if (!container) return;
+
+        if (shouldAutoScrollRef.current || isStreaming) {
+            container.scrollTo({
+                top: container.scrollHeight,
+                behavior: isStreaming ? 'auto' : 'smooth',
+            });
+        }
+    }, [messages, isStreaming]);
+
+    const handleMessagesScroll = () => {
+        const container = messagesContainerRef.current;
+        if (!container) return;
+        const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+        shouldAutoScrollRef.current = distanceFromBottom < 120;
+    };
 
     // Open Chat History on hard refresh if no chat is active
     useEffect(() => {
         if (!hasGreeted.current && messages.length === 0 && !isExplicitNewChat.current && !searchParams.get('trip_id')) {
             // Delay slightly to avoid unmounted flicker
+            hasGreeted.current = true;
             const timer = setTimeout(() => setShowChatHistory(true), 100);
             return () => clearTimeout(timer);
         }
@@ -95,14 +113,14 @@ export default function ChatPage() {
 
             // Remove the query param from the URL without triggering a reload
             router.replace('/chat');
-        } else if (urlTripId && urlTripId !== useChatStore.getState().activeTripId) {
+        } else if (urlTripId && urlTripId !== activeTripId) {
             // User navigated directly to a specific chat
             handleSelectConversation(urlTripId).then(() => {
                 // Optionally remove the query param 
                 router.replace('/chat');
             });
         }
-    }, [searchParams, router, setActiveTripId, setMessages, setExtractedItinerary]);
+    }, [searchParams, router, setActiveTripId, setMessages, setExtractedItinerary, activeTripId]);
 
     // ... (keep existing useEffects) ...
 
@@ -114,7 +132,7 @@ export default function ChatPage() {
             }
 
             // If clicking the current trip, just close
-            if (tripId === useChatStore.getState().activeTripId) {
+            if (tripId === activeTripId) {
                 return;
             }
 
@@ -126,36 +144,13 @@ export default function ChatPage() {
             // Update store
             setActiveTripId(tripId);
 
-            // Load messages if they exist in the trip object (need to ensure backend returns them)
-            // The current getTrip endpoint returns the Trip document. 
-            // We might need to fetch messages separately if they aren't embedded.
-            // For now, let's assume we need to fetch messages.
-            // Wait, the backend getTrip doesn't return messages.
-            // We need a way to get messages for a trip. 
-            // Let's use listConversations to get the preview, but for full chat we need an endpoint.
-            // Actually, we can just fetch the messages endpoint if it existed. 
-            // Since it doesn't, let's look at the backend... 
-            // The backend `get_trip` returns the trip doc. 
-            // The `stream_chat` endpoint loads context from `db.messages`.
-            // We need an endpoint to `GET /chat/messages/{trip_id}`.
-
-            // TEMPORARY: Since we don't have a direct "get messages" endpoint, 
-            // and `listConversations` only gives the last message,
-            // we will need to implement a specialized endpoint or use what we have.
-            // However, for now, let's try to fetch the trip and maybe the user can continue the chat.
-            // But they won't see history. This is a blocker.
-
-            // WAIT! The user asked to "show that chat history". 
-            // I should assume I need to fetch it.
-            // I'll add a call to `api.getTripMessages(tripId)` which I'll implement in api.ts next.
-
             const messages = await api.getTripMessages(tripId);
 
             // Transform to ChatMessage format
             const chatMessages = messages.map((msg: any) => ({
                 id: msg._id || Date.now().toString(),
                 role: msg.role,
-                content: msg.content,
+                content: typeof msg.content === 'string' ? msg.content : '',
                 timestamp: new Date(msg.created_at)
             }));
 
@@ -163,7 +158,7 @@ export default function ChatPage() {
 
             // If the trip has an itinerary, load it too
             if (trip.itinerary) {
-                setExtractedItinerary(trip.itinerary);
+                setExtractedItinerary(normalizeItinerary(trip.itinerary));
             } else {
                 setExtractedItinerary(null);
             }
@@ -188,20 +183,26 @@ export default function ChatPage() {
         if (!text.trim() || isStreaming) return;
 
         const userMessage = text.trim();
+        const now = Date.now();
+        const userMessageId = `${now}-user`;
+        const assistantMessageId = `${now}-assistant`;
         setInput('');
+        shouldAutoScrollRef.current = true;
+        setPendingConfirmation(null);
 
         addMessage({
-            id: Date.now().toString(),
+            id: userMessageId,
             role: 'user',
             content: userMessage,
             timestamp: new Date()
         });
 
         addMessage({
-            id: (Date.now() + 1).toString(),
+            id: assistantMessageId,
             role: 'assistant',
             content: '',
-            timestamp: new Date()
+            timestamp: new Date(),
+            status: 'pending'
         });
 
         setStreaming(true);
@@ -224,7 +225,7 @@ export default function ChatPage() {
         try {
             await streamRequest('/chat/stream', {
                 message: userMessage,
-                trip_id: useChatStore.getState().activeTripId,
+                trip_id: activeTripId,
                 trip_context: { preferences: cleanProfile }
             }, (event: StreamEvent) => {
                 switch (event.type) {
@@ -235,29 +236,20 @@ export default function ChatPage() {
                         break;
                     case 'status':
                         setAgentStatus(event.agent || '', event.status || '');
-                        // Map status to stage
-                        if (event.status?.toLowerCase().includes('route')) {
-                            setCurrentStage('routes');
-                        } else if (event.status?.toLowerCase().includes('weather')) {
-                            setCurrentStage('weather');
-                        } else if (event.status?.toLowerCase().includes('hotels')) {
-                            setCurrentStage('hotels');
-                        } else if (event.status?.toLowerCase().includes('plan')) {
-                            setCurrentStage('build');
-                        }
                         break;
                     case 'itinerary':
                         if (event.itinerary) {
-                            setExtractedItinerary(event.itinerary);
+                            setExtractedItinerary(normalizeItinerary(event.itinerary));
                         }
                         break;
                     case 'data':
                         if (event.data_type === 'weather' && event.data) {
                             useChatStore.getState().setWeatherData(event.data);
                         } else if (event.data_type === 'itinerary' && event.data) {
-                            setExtractedItinerary(event.data);
+                            const normalized = normalizeItinerary(event.data);
+                            setExtractedItinerary(normalized);
                             // Auto-open the itinerary panel as soon as it's ready
-                            setSavedTripId(useChatStore.getState().activeTripId || '');
+                            setSavedTripId(activeTripId || '');
                             setShowItineraryModal(true);
                         } else if (event.data_type === 'confirmation_required' && event.data) {
                             // Phase 4: show confirmation card
@@ -265,26 +257,43 @@ export default function ChatPage() {
                         }
                         break;
                     case 'tool_start':
-                        // console.log('Tool started:', event.content);
+                        setAgentStatus('Assistant', 'Working on your plan...');
+                        break;
+                    case 'tool_end':
                         break;
                     case 'done':
                         setAgentStatus('', '');
-                        setCurrentStage(null);
                         if (event.trip_id) {
                             useChatStore.getState().setActiveTripId(event.trip_id);
                         }
                         break;
+                    case 'cancelled':
+                        appendToLastMessage('\n\nRequest cancelled.');
+                        toast.error('The current request was cancelled.');
+                        break;
                     case 'error':
-                        console.error('Stream error:', event.error);
+                        appendToLastMessage(`\n\n⚠️ ${sanitizeStreamError(event.error)}`);
+                        toast.error(sanitizeStreamError(event.error));
                         break;
                 }
-            });
+            }, undefined, 0);
         } catch (error: any) {
             console.error('Chat error:', error);
-            // Remove the empty assistant message on error
-            useChatStore.setState(state => ({
-                messages: state.messages.filter(m => m.id !== (Date.now() + 1).toString())
-            }));
+            const fallbackErrorText = '\n\n⚠️ Failed to complete the response. Please retry.';
+            useChatStore.setState((state) => {
+                const target = state.messages.find((m) => m.id === assistantMessageId);
+                if (!target) return state;
+                if (target.content?.trim()) {
+                    return {
+                        messages: state.messages.map((m) =>
+                            m.id === assistantMessageId ? { ...m, content: `${m.content}${fallbackErrorText}` } : m
+                        ),
+                    };
+                }
+                return {
+                    messages: state.messages.filter((m) => m.id !== assistantMessageId),
+                };
+            });
 
             if (error?.status === 403 || error?.message?.toLowerCase().includes('limit')) {
                 toast.error('Free tier limit reached. Redirecting to plans...');
@@ -297,6 +306,14 @@ export default function ChatPage() {
             setAgentStatus('', '');
         }
     };
+
+    const handleDeleteMessage = useCallback((id: string) => {
+        setMessages((prev) => prev.filter((m) => m.id !== id));
+    }, [setMessages]);
+
+    const handleEditMessage = useCallback((id: string, content: string) => {
+        setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, content } : m)));
+    }, [setMessages]);
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -347,40 +364,6 @@ export default function ChatPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         await sendMessage(input);
-    };
-
-    const handleSaveTrip = async () => {
-        setIsSaving(true);
-        try {
-            const tripData = {
-                title: extractedItinerary?.title || "New Trip Plan",
-                cities: extractedItinerary?.cities || ["Planned Destination"],
-                num_days: extractedItinerary?.num_days || 5,
-                num_travelers: extractedItinerary?.num_travelers || 1,
-                start_date: extractedItinerary?.start_date,
-                end_date: extractedItinerary?.end_date,
-                budget_total: extractedItinerary?.budget_total,
-                itinerary: extractedItinerary?.days ? {
-                    days: extractedItinerary.days,
-                    total_estimated_cost: extractedItinerary.budget_total
-                } : undefined
-            };
-
-            const response = await api.createTrip(tripData);
-            setSavedTripId(response.trip_id);
-
-            toast.success('Trip saved! You can now export or share it.');
-        } catch (error: any) {
-            console.error('Failed to save trip:', error);
-            if (error?.status === 403 || error?.message?.toLowerCase().includes('limit')) {
-                toast.error('Free tier limit reached. Redirecting to plans...');
-                setTimeout(() => router.push('/plans'), 2000);
-            } else {
-                toast.error('Failed to save trip. Please try again.');
-            }
-        } finally {
-            setIsSaving(false);
-        }
     };
 
     const handleQuickAction = (label: string) => {
@@ -445,7 +428,7 @@ export default function ChatPage() {
                 onClose={() => setShowChatHistory(false)}
                 onSelectConversation={handleSelectConversation}
                 onNewChat={handleNewChat}
-                currentTripId={useChatStore.getState().activeTripId || undefined}
+                currentTripId={activeTripId || undefined}
             />
 
             {/* Chat Section */}
@@ -491,14 +474,21 @@ export default function ChatPage() {
                 )}
 
                 {/* Messages */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ background: 'var(--bg-primary)' }}>
-                    {messages.map((message) => (
+                <div
+                    ref={messagesContainerRef}
+                    onScroll={handleMessagesScroll}
+                    className="flex-1 overflow-y-auto p-4 space-y-4"
+                    style={{ background: 'var(--bg-primary)' }}
+                >
+                    {messages.map((message, index) => (
                         <MessageBubble
                             key={message.id}
                             message={message}
-                            tripId={useChatStore.getState().activeTripId}
-                            onDelete={(id) => setMessages(messages.filter(m => m.id !== id))}
-                            onEdit={(id, content) => setMessages(messages.map(m => m.id === id ? { ...m, content } : m))}
+                            tripId={activeTripId}
+                            groupedWithPrevious={index > 0 && messages[index - 1]?.role === message.role}
+                            onDelete={handleDeleteMessage}
+                            onEdit={handleEditMessage}
+                            isPending={isStreaming && index === messages.length - 1 && message.role === 'assistant' && !message.content.trim()}
                         />
                     ))}
 
@@ -519,7 +509,6 @@ export default function ChatPage() {
                         </div>
                     )}
 
-                    <div ref={messagesEndRef} />
                 </div>
 
                 {/* Quick Actions */}
@@ -605,7 +594,7 @@ export default function ChatPage() {
                     onClose={() => setShowItineraryModal(false)}
                     itinerary={extractedItinerary}
                     weatherData={weatherData}
-                    tripId={savedTripId || useChatStore.getState().activeTripId || ''}
+                    tripId={savedTripId || activeTripId || ''}
                 />
             )}
 
@@ -623,11 +612,20 @@ export default function ChatPage() {
     );
 }
 
-function MessageBubble({ message, tripId, onDelete, onEdit }: {
+const MessageBubble = memo(function MessageBubble({
+    message,
+    tripId,
+    groupedWithPrevious = false,
+    onDelete,
+    onEdit,
+    isPending = false
+}: {
     message: ChatMessage;
     tripId?: string | null;
+    groupedWithPrevious?: boolean;
     onDelete?: (id: string) => void;
     onEdit?: (id: string, newContent: string) => void;
+    isPending?: boolean;
 }) {
     const isUser = message.role === 'user';
     const [hovered, setHovered] = useState(false);
@@ -664,11 +662,11 @@ function MessageBubble({ message, tripId, onDelete, onEdit }: {
 
     return (
         <div
-            className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-slide-in-up group`}
+            className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-slide-in-up group ${groupedWithPrevious ? 'mt-1' : ''}`}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
         >
-            {!isUser && (
+            {!isUser && !groupedWithPrevious && (
                 <div
                     className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mr-2 mt-1"
                     style={{ background: 'var(--accent-50)' }}
@@ -676,6 +674,7 @@ function MessageBubble({ message, tripId, onDelete, onEdit }: {
                     <Sparkles className="w-4 h-4" style={{ color: 'var(--accent)' }} />
                 </div>
             )}
+            {!isUser && groupedWithPrevious && <div className="w-8 mr-2" aria-hidden="true" />}
 
             <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[80%]`}>
                 <div
@@ -715,7 +714,17 @@ function MessageBubble({ message, tripId, onDelete, onEdit }: {
                         </div>
                     ) : (
                         <div className={`prose prose-sm max-w-none ${isUser ? 'text-white' : 'prose-travel'}`}>
-                            <ReactMarkdown>{message.content || '...'}</ReactMarkdown>
+                            {isPending ? (
+                                <div className="flex items-center gap-2 text-sm opacity-80 not-prose">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    <span>Thinking...</span>
+                                </div>
+                            ) : (
+                                <MarkdownRenderer
+                                    content={message.content || '...'}
+                                    coerceStructuredContent={!isUser}
+                                />
+                            )}
                         </div>
                     )}
                 </div>
@@ -744,5 +753,7 @@ function MessageBubble({ message, tripId, onDelete, onEdit }: {
             </div>
         </div>
     );
-}
+});
+
+MessageBubble.displayName = 'MessageBubble';
 

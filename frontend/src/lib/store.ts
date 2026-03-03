@@ -48,7 +48,7 @@ interface ChatState {
     setExtractedItinerary: (itinerary: any) => void;
     setWeatherData: (data: any) => void;
     setActiveTripId: (tripId: string | null) => void;
-    setMessages: (messages: ChatMessage[]) => void;
+    setMessages: (messages: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => void;
     updateLastMessageData: (data: unknown) => void;
     clearMessages: () => void;
     setUploadingImage: (isUploading: boolean) => void;
@@ -105,7 +105,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     setExtractedItinerary: (extractedItinerary) => set({ extractedItinerary }),
     setWeatherData: (weatherData) => set({ weatherData }),
 
-    setMessages: (messages) => set({ messages }),
+    setMessages: (messagesOrUpdater) => set((state) => ({
+        messages: typeof messagesOrUpdater === 'function'
+            ? (messagesOrUpdater as (prev: ChatMessage[]) => ChatMessage[])(state.messages)
+            : messagesOrUpdater
+    })),
 
     updateLastMessageData: (data) => set((state) => {
         const messages = [...state.messages];

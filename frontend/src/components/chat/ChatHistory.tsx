@@ -9,7 +9,11 @@ interface Conversation {
     trip_id: string;
     _id?: string;
     title?: string;
-    messages: any[];
+    last_message?: {
+        role?: string;
+        content?: string;
+        created_at?: string;
+    };
     created_at: string;
     updated_at: string;
     is_trip?: boolean;
@@ -43,6 +47,8 @@ export function ChatHistory({ onSelectConversation, currentTripId, isOpen, onClo
         }
     };
 
+    const getConversationId = (convo: Conversation) => convo.trip_id || convo._id || "";
+
     const handleSaveAsTrip = async (tripId: string) => {
         setSavingIds(prev => new Set(prev).add(tripId));
         try {
@@ -50,7 +56,7 @@ export function ChatHistory({ onSelectConversation, currentTripId, isOpen, onClo
             toast.success('Saved as trip! View it in your Trips page.');
             // Update local state to reflect is_trip = true
             setConversations(prev =>
-                prev.map(c => (c.trip_id || c._id) === tripId ? { ...c, is_trip: true } : c)
+                prev.map(c => getConversationId(c) === tripId ? { ...c, is_trip: true } : c)
             );
         } catch (error) {
             toast.error('Failed to save as trip');
@@ -70,7 +76,7 @@ export function ChatHistory({ onSelectConversation, currentTripId, isOpen, onClo
         try {
             await api.deleteConversation(tripId);
             toast.success('Conversation deleted');
-            setConversations(prev => prev.filter(c => (c.trip_id || c._id) !== tripId));
+            setConversations(prev => prev.filter(c => getConversationId(c) !== tripId));
         } catch (error) {
             toast.error('Failed to delete conversation');
         }
@@ -177,13 +183,15 @@ export function ChatHistory({ onSelectConversation, currentTripId, isOpen, onClo
                             <p>No conversations yet</p>
                         </div>
                     ) : (
-                        conversations.map((convo, idx) => (
+                        conversations.map((convo, idx) => {
+                            const convoId = getConversationId(convo);
+                            return (
                             <div
-                                key={convo.trip_id || convo._id || `chat-${idx}`}
-                                className={`p-3 border-b hover:bg-black/5 cursor-pointer transition-colors ${currentTripId === convo.trip_id ? 'bg-accent/10 border-l-4 border-l-accent' : ''
+                                key={convoId || `chat-${idx}`}
+                                className={`p-3 border-b hover:bg-black/5 cursor-pointer transition-colors ${currentTripId === convoId ? 'bg-accent/10 border-l-4 border-l-accent' : ''
                                     }`}
                                 style={{ borderColor: 'rgba(0,0,0,0.05)' }}
-                                onClick={() => onSelectConversation(convo.trip_id || convo._id || "")}
+                                onClick={() => onSelectConversation(convoId)}
                             >
                                 <div className="flex items-start justify-between gap-2">
                                     <div className="flex-1 min-w-0">
@@ -199,7 +207,7 @@ export function ChatHistory({ onSelectConversation, currentTripId, isOpen, onClo
                                             )}
                                         </div>
                                         <p className="text-xs line-clamp-2 mt-1" style={{ color: 'var(--text-secondary)' }}>
-                                            {convo.messages?.at(-1)?.content || 'No messages'}
+                                            {convo.last_message?.content || 'No messages'}
                                         </p>
                                         <div className="flex items-center gap-1 mt-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
                                             <Clock className="w-3 h-3" />
@@ -208,11 +216,11 @@ export function ChatHistory({ onSelectConversation, currentTripId, isOpen, onClo
                                     </div>
 
                                     {/* Actions Menu */}
-                                    <div className="relative" ref={activeMenu === convo.trip_id ? menuRef : null}>
+                                    <div className="relative" ref={activeMenu === convoId ? menuRef : null}>
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                setActiveMenu(activeMenu === convo.trip_id ? null : convo.trip_id);
+                                                setActiveMenu(activeMenu === convoId ? null : convoId);
                                             }}
                                             className="p-1 hover:bg-black/5 rounded transition-colors"
                                             style={{ color: 'var(--text-secondary)' }}
@@ -220,20 +228,20 @@ export function ChatHistory({ onSelectConversation, currentTripId, isOpen, onClo
                                             <MoreVertical className="w-4 h-4" />
                                         </button>
 
-                                        {activeMenu === convo.trip_id && (
+                                        {activeMenu === convoId && (
                                             <div className="absolute right-0 top-8 rounded-lg shadow-lg py-1 z-10 w-44" style={{ background: 'var(--bg-secondary)', border: '1px solid rgba(0,0,0,0.05)' }}>
                                                 {!convo.is_trip ? (
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            handleSaveAsTrip(convo.trip_id || convo._id || "");
+                                                            handleSaveAsTrip(convoId);
                                                         }}
-                                                        disabled={savingIds.has(convo.trip_id || convo._id || "")}
+                                                        disabled={savingIds.has(convoId)}
                                                         className="w-full px-3 py-2 text-left text-sm hover:bg-black/5 flex items-center gap-2 disabled:opacity-50"
                                                         style={{ color: 'var(--text-primary)' }}
                                                     >
                                                         <Save className="w-4 h-4 text-indigo-600" />
-                                                        {savingIds.has(convo.trip_id) ? 'Saving...' : 'Save as Trip'}
+                                                        {savingIds.has(convoId) ? 'Saving...' : 'Save as Trip'}
                                                     </button>
                                                 ) : (
                                                     <div className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 text-indigo-600 cursor-default">
@@ -244,7 +252,7 @@ export function ChatHistory({ onSelectConversation, currentTripId, isOpen, onClo
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        handleShare(convo.trip_id || convo._id || "");
+                                                        handleShare(convoId);
                                                         setActiveMenu(null);
                                                     }}
                                                     className="w-full px-3 py-2 text-left text-sm hover:bg-black/5 flex items-center gap-2"
@@ -256,7 +264,7 @@ export function ChatHistory({ onSelectConversation, currentTripId, isOpen, onClo
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        handleDelete(convo.trip_id || convo._id || "");
+                                                        handleDelete(convoId);
                                                         setActiveMenu(null);
                                                     }}
                                                     className="w-full px-3 py-2 text-left text-sm hover:bg-red-50/50 flex items-center gap-2 text-red-600"
@@ -269,7 +277,8 @@ export function ChatHistory({ onSelectConversation, currentTripId, isOpen, onClo
                                     </div>
                                 </div>
                             </div>
-                        ))
+                        );
+                        })
                     )}
                 </div>
             </div>

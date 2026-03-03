@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useRouter } from 'next/navigation';
+import { normalizeItinerary } from '@/lib/itinerary';
 
 interface ItineraryModalProps {
     isOpen: boolean;
@@ -25,8 +26,9 @@ export const ItineraryModal: React.FC<ItineraryModalProps> = ({
     const [isExporting, setIsExporting] = useState(false);
     const { user } = useAuth();
     const router = useRouter();
+    const normalizedItinerary = normalizeItinerary(itinerary);
 
-    if (!isOpen || !itinerary) return null;
+    if (!isOpen || !normalizedItinerary) return null;
 
     const canExport = user?.subscription_tier === 'adventure' || user?.subscription_tier === 'ultimate';
 
@@ -51,7 +53,7 @@ export const ItineraryModal: React.FC<ItineraryModalProps> = ({
     const handleShare = async () => {
         try {
             const res = await api.updateTrip(tripId, { is_public: true });
-            let shareId = res.sharing_id || itinerary.sharing_id;
+            let shareId = res.sharing_id || (normalizedItinerary as any).sharing_id;
 
             if (!shareId) {
                 const updated = await api.getTrip(tripId);
@@ -71,7 +73,11 @@ export const ItineraryModal: React.FC<ItineraryModalProps> = ({
         }
     };
 
-    const { title, cities, start_date, num_days, num_travelers, budget_total, days } = itinerary;
+    const { title, cities, num_days, num_travelers, budget_total, days } = normalizedItinerary;
+    const dayBudgets = (days || []).map((day: any) =>
+        (day.stops || []).reduce((sum: number, stop: any) => sum + (Number(stop.estimated_cost) || 0), 0)
+    );
+    const hasPerDayBudget = dayBudgets.some((n: number) => n > 0);
 
     // Helper functions for weather
     const getWeatherIcon = (description: string) => {
@@ -144,6 +150,18 @@ export const ItineraryModal: React.FC<ItineraryModalProps> = ({
                                     </div>
                                 )}
                             </div>
+                            {hasPerDayBudget && (
+                                <div className="mt-4 rounded-xl p-3 text-sm" style={{ background: 'var(--bg-tertiary)' }}>
+                                    <div className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Budget Breakdown</div>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                        {dayBudgets.map((value: number, index: number) => (
+                                            <div key={`budget-${index}`} style={{ color: 'var(--text-secondary)' }}>
+                                                Day {index + 1}: <span style={{ color: 'var(--text-primary)' }}>{`INR ${value.toLocaleString()}`}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {/* Weather Summary (if available) */}
@@ -217,7 +235,7 @@ export const ItineraryModal: React.FC<ItineraryModalProps> = ({
                                                 <div className="flex flex-col gap-1">
                                                     <div className="flex items-center gap-2 text-xs font-medium" style={{ color: 'var(--accent)' }}>
                                                         <Clock className="w-3 h-3" />
-                                                        <span>{activity.time}</span>
+                                                        <span>{activity.time || 'Flexible timing'}</span>
                                                     </div>
                                                     <div className="font-medium" style={{ color: 'var(--text-primary)' }}>
                                                         {activity.name}

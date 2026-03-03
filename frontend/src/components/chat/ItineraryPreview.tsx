@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { MapPin, Calendar, Users, Wallet, Clock, ChevronRight, Download, Share2, Loader2, Crown } from 'lucide-react';
+import { MapPin, Calendar, Users, Wallet, Clock, Download, Share2, Loader2, Crown } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useRouter } from 'next/navigation';
+import { normalizeItinerary } from '@/lib/itinerary';
 
 interface ItineraryPreviewProps {
     itinerary: any;
@@ -14,14 +15,13 @@ interface ItineraryPreviewProps {
 
 export const ItineraryPreview: React.FC<ItineraryPreviewProps> = ({
     itinerary,
-    isSaving,
-    onSave,
     tripId
 }) => {
     // ...
     const [isExporting, setIsExporting] = useState(false);
     const { user } = useAuth();
     const router = useRouter();
+    const normalizedItinerary = normalizeItinerary(itinerary);
 
     const canExport = user?.subscription_tier === 'adventure' || user?.subscription_tier === 'ultimate';
 
@@ -55,7 +55,7 @@ export const ItineraryPreview: React.FC<ItineraryPreviewProps> = ({
 
         try {
             const res = await api.updateTrip(tripId, { is_public: true });
-            let shareId = res.sharing_id || itinerary.sharing_id;
+            let shareId = res.sharing_id || (normalizedItinerary as any)?.sharing_id;
 
             if (!shareId) {
                 const updated = await api.getTrip(tripId);
@@ -74,7 +74,7 @@ export const ItineraryPreview: React.FC<ItineraryPreviewProps> = ({
             toast.error('Failed to share trip');
         }
     };
-    if (!itinerary) {
+    if (!normalizedItinerary) {
         return (
             <div className="flex-1 flex items-center justify-center p-8 h-full">
                 <div className="text-center max-w-sm">
@@ -95,7 +95,7 @@ export const ItineraryPreview: React.FC<ItineraryPreviewProps> = ({
         );
     }
 
-    const { title, cities, start_date, num_days, num_travelers, budget_total, days } = itinerary;
+    const { title, cities, num_days, num_travelers, budget_total, days } = normalizedItinerary;
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
@@ -179,7 +179,7 @@ export const ItineraryPreview: React.FC<ItineraryPreviewProps> = ({
                                     <div className="flex flex-col gap-1">
                                         <div className="flex items-center gap-2 text-xs font-medium" style={{ color: 'var(--accent)' }}>
                                             <Clock className="w-3 h-3" />
-                                            <span>{activity.time}</span>
+                                            <span>{activity.time || 'Flexible timing'}</span>
                                         </div>
                                         <div className="font-medium" style={{ color: 'var(--text-primary)' }}>
                                             {activity.name}
