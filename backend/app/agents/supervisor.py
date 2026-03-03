@@ -29,6 +29,11 @@ from app.agents.stay import StayAgent
 from app.agents.food import FoodAgent
 from app.agents.weather import WeatherAgent
 from app.db.vector_store import VectorStore
+from app.prompts import (
+    build_supervisor_planning_prompt,
+    build_supervisor_smalltalk_prompt,
+    build_supervisor_weaver_prompt,
+)
 
 
 ALLOWED_AGENTS = {
@@ -716,46 +721,15 @@ class SupervisorAgent(BaseAgent):
             tz = timezone.utc
         current_time_str = datetime.now(tz).strftime("%A, %Y-%m-%d %H:%M %Z")
 
-        prompt = f"""You are the planning brain of Watchout, an Indian travel AI.
-Read the conversation carefully. Your job is to decide what action to take NEXT — not to answer the user directly.
-
-ALLOWED_AGENTS = {sorted(list(ALLOWED_AGENTS))}
-CRITICAL_FIELDS = {CRITICAL_FIELDS}
-
-DECISION RULES:
-- If the user is greeting, thanking, or making small talk → intent = "smalltalk", agents = []
-- If the conversation history already has a field (destination, duration, travelers, etc.), do NOT mark it as missing — even if the structured preferences dict doesn't show it yet. Read the history carefully.
-- Only trigger intent = "clarify" when truly critical fields (especially destination or duration) are MISSING and CANNOT be inferred from context clues in the conversation
-- If the user says "plan my trip" / "let's go" / "make the itinerary" and you have destination + duration → intent = "plan"
-- If the user asks to change/update/regenerate a part of the plan → intent = "refine"
-- Vibe, pace, and travel_style CAN be inferred from language clues ("chill beach trip" → relaxed + beach; "me and my wife" → couple/romantic) — do NOT ask for these if they can be inferred
-- Prefer parallel = true when weather, route, food, stay can run alongside each other (they are independent after itinerary)
-- Only run agents the user actually needs — don't always run ALL agents, match to the specific request
-
-CONTEXT:
-Current user time: {current_time_str}
-Conversation so far:
-{history_text}
-
-User just said: "{self._sanitize_for_prompt(message)}"
-
-Already known about the user:
-{json.dumps(preferences, ensure_ascii=False)}
-
-User memories:
-{json.dumps(memories, ensure_ascii=False)}
-
-Output ONLY valid JSON matching exactly this structure:
-{{
-  "intent": "smalltalk|clarify|plan|refine",
-  "should_clarify": true/false,
-  "missing_fields": [],
-  "agents": [],
-  "parallel": true/false,
-  "priority": [],
-  "notes": ""
-}}
-"""
+        prompt = build_supervisor_planning_prompt(
+            allowed_agents=sorted(list(ALLOWED_AGENTS)),
+            critical_fields=CRITICAL_FIELDS,
+            current_time_str=current_time_str,
+            history_text=history_text,
+            message=self._sanitize_for_prompt(message),
+            preferences=preferences,
+            memories=memories,
+        )
 
         schema = {
             "type": "object",
@@ -767,8 +741,16 @@ Output ONLY valid JSON matching exactly this structure:
                 "parallel": {"type": "boolean"},
                 "priority": {"type": "array", "items": {"type": "string"}},
                 "notes": {"type": "string"},
+                "confidence_score": {"type": "number"},
             },
-            "required": ["intent", "agents", "parallel", "missing_fields", "should_clarify"],
+            "required": [
+                "intent",
+                "agents",
+                "parallel",
+                "missing_fields",
+                "should_clarify",
+                "confidence_score",
+            ],
         }
 
         try:
@@ -779,6 +761,8 @@ Output ONLY valid JSON matching exactly this structure:
             # Clean invalid agent names
             agents = [a for a in result.get("agents", []) if a in ALLOWED_AGENTS]
             result["agents"] = agents
+            if "confidence_score" not in result:
+                result["confidence_score"] = 0.7
 
             # Compute missing fields deterministically too (backup)
             missing = self._compute_missing_fields(preferences)
@@ -789,6 +773,7 @@ Output ONLY valid JSON matching exactly this structure:
                 result["missing_fields"] = missing
                 result["agents"] = ["clarification"]
                 result["parallel"] = False
+                result["confidence_score"] = 0.85
 
             return result
 
@@ -804,6 +789,7 @@ Output ONLY valid JSON matching exactly this structure:
                     "parallel": False,
                     "priority": ["clarification"],
                     "notes": "Fallback clarify due to missing fields",
+                    "confidence_score": 0.8,
                 }
 
             return {
@@ -814,6 +800,7 @@ Output ONLY valid JSON matching exactly this structure:
                 "parallel": True,
                 "priority": ["itinerary", "route", "stay", "food", "weather"],
                 "notes": "Fallback plan",
+                "confidence_score": 0.6,
             }
 
     def _compute_missing_fields(self, preferences: Dict[str, Any]) -> List[str]:
@@ -861,40 +848,15 @@ Output ONLY valid JSON matching exactly this structure:
             tz = timezone.utc
         current_time_str = datetime.now(tz).strftime("%A, %Y-%m-%d %H:%M %Z")
 
-        prompt = f"""You are Watchout — India's warmest, most knowledgeable travel companion. You've just received research from your specialist team. Write the final message to the user.
-
-PERSONA:
-- Match the user's energy: if they're excited ("I can't wait!"), be enthusiastic back; if they're cautious ("I'm worried about safety"), be reassuring first
-- Reference their actual preferences back to them ("Since you love beaches and hate crowds...")
-- Use emojis naturally — only where they genuinely add warmth and energy, not as a checklist
-- Short paragraphs, mobile-friendly, bold the most important info (names, times, costs)
-- If the plan is COMPLETE, celebrate it and offer a clear next action (save it, refine a day, get hotel options)
-- If the plan is PARTIAL, be upfront: "I've got your day-plan ready! Want me to also find hotels and transport?"
-- Do NOT end every single message with a question — sometimes just deliver the goods and let them respond
-- Speak like you're texting your well-travelled cousin from Bangalore who knows every shortcut
-
-TONE CALIBRATION:
-- Use Indian context naturally where relevant ("auto-rickshaws are perfect for short hops in Mysuru")
-- Acknowledge the user by name if known
-- Never mention internal agents, tools, or system details
-
-CONTEXT:
-Current user time: {current_time_str}
-User's name: {user_name}
-User's vibe: {vibe_str}
-Conversation so far:
-{history_text}
-
-User just asked: "{self._sanitize_for_prompt(user_message)}"
-
-Known preferences:
-{json.dumps(preferences, ensure_ascii=False)}
-
-Research from specialists:
-{agent_outputs}
-
-Write the final user-facing message now. Make it feel human, warm, and expert — like it came from your best-travelled friend.
-"""
+        prompt = build_supervisor_weaver_prompt(
+            current_time_str=current_time_str,
+            user_name=user_name,
+            vibe_str=vibe_str,
+            history_text=history_text,
+            user_message=self._sanitize_for_prompt(user_message),
+            preferences=preferences,
+            agent_outputs=agent_outputs,
+        )
 
         try:
             async for chunk in self.stream(prompt):
@@ -919,20 +881,12 @@ Write the final user-facing message now. Make it feel human, warm, and expert �
         known_destination = preferences.get("destinations") or preferences.get("destinations_or_region")
         dest_str = f"to {known_destination[0]}" if isinstance(known_destination, list) and known_destination else (f"to {known_destination}" if known_destination else "")
 
-        prompt = f"""You are Watchout, India's friendliest travel companion. The user just said something casual.
-
-User said: "{message}"
-User name: {name}
-What you know about them: {json.dumps(preferences)}
-
-Respond in 1–3 lines. Be warm and natural, like texting a friend:
-- If greeting → say hi warmly{f', maybe mention their trip {dest_str}' if dest_str else ''}, then naturally invite them to talk travel (NOT the robotic "Are you planning a trip?" — make it organic)
-- If thanking → accept graciously and offer to help further with their trip
-- If venting/complaining about travel → empathize briefly, then pivot to how you can help fix it
-- If just chatting → engage warmly, then naturally invite them to plan something together
-
-Do NOT use stiff transitions. Do NOT ask the word-for-word question "Are you planning a trip?" — weave travel naturally into your reply.
-"""
+        prompt = build_supervisor_smalltalk_prompt(
+            message=message,
+            name=name,
+            preferences=preferences,
+            dest_str=dest_str,
+        )
 
         async for chunk in self.stream(prompt):
             yield chunk
