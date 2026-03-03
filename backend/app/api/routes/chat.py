@@ -18,6 +18,7 @@ from app.core.firebase_auth import verify_firebase_token
 from app.db.mongo import get_database
 from app.models.chat import ChatRequest, ChatResponse
 from app.core.token_limiter import current_user_id, check_trip_limit
+from app.prompts import build_trip_title_prompt
 
 router = APIRouter()
 
@@ -75,13 +76,7 @@ async def _generate_trip_title(itinerary: dict, preferences: dict) -> str:
         from groq import AsyncGroq
         from app.core.config import settings
         groq = AsyncGroq(api_key=settings.groq_api_key)
-        prompt = (
-            f"Create one short, catchy, poetic trip title (max 60 chars) for a "
-            f"{num_days}-day trip to {city_str}, India. "
-            f"Travel style: {vibe or 'general sightseeing'}. "
-            f"Use a relevant emoji at the start. Be creative and evocative. "
-            f"Output ONLY the title, nothing else."
-        )
+        prompt = build_trip_title_prompt(num_days=num_days, city_str=city_str, vibe=vibe)
         resp = await groq.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],

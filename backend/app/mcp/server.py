@@ -15,15 +15,12 @@ from app.agents.route import RouteAgent
 from app.agents.stay import StayAgent
 from app.agents.food import FoodAgent
 from app.agents.reviewer import ReviewerAgent
+from app.prompts import build_mcp_server_instructions
 
 
 mcp = FastMCP(
     name="Watchout Travel Tools",
-    instructions=(
-        "You are Watchout, India's warmest travel companion. "
-        "Use these tools to gather preferences, research destinations, "
-        "and build personalised Indian travel itineraries."
-    ),
+    instructions=build_mcp_server_instructions(),
 )
 
 # ---------------------------------------------------------------------------

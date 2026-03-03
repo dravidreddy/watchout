@@ -3,6 +3,7 @@ Watchout Backend - Food Agent
 """
 from typing import Dict, Any, Optional, List
 from app.agents.base import BaseAgent
+from app.prompts import build_food_general_prompt, build_food_specialties_prompt
 from app.tools.google_places import get_places_tool
 
 
@@ -32,13 +33,7 @@ class FoodAgent(BaseAgent):
 
         if not city:
             response_parts = []
-            async for chunk in self.stream(
-                f"""You are Watchout, India's warmest travel companion. Answer this food question naturally.
-
-Question: {user_input}
-
-Be specific, use local dish names, and give honest opinions about where to eat. Reference booking platforms like Zomato and Swiggy where relevant."""
-            ):
+            async for chunk in self.stream(build_food_general_prompt(user_input)):
                 response_parts.append(chunk)
 
             return {
@@ -105,34 +100,25 @@ Be specific, use local dish names, and give honest opinions about where to eat. 
             }
         }
 
-        prompt = f"""You are Watchout's passionate food guide — a lover of Indian regional cuisine.
-
-City: {city}, India
-Traveler profile:
-- Dietary needs: {dietary_str}
-- Budget: {budget}
-- Trip vibe: {vibe_str}
-
-Tell me about the food scene for this specific traveler. Cover:
-1. Must-try dishes (3–4 dishes SPECIFIC to this city/region — not generic "biryani" unless it's genuinely Hyderabad)
-2. Named street food hotspots (actual market/street names where possible: "Dilli Haat", "Manek Chowk in Ahmedabad", "Chowpatty Beach in Mumbai")
-3. Dining occasion tips (where to go for a rooftop dinner vs. a quick lunch vs. a local breakfast with chai)
-4. One honest caution (a dish that's always disappointing at tourist restaurants vs. where to find the authentic version)
-
-Be specific. Be a local. Not a guidebook."""
+        prompt = build_food_specialties_prompt(
+            city=city,
+            dietary_str=dietary_str,
+            budget=budget,
+            vibe_str=vibe_str,
+        )
 
         return await self.generate_structured(prompt, schema) or {}
     
     def _format_response(self, city: str, restaurants: List, local_food: Dict) -> str:
         """Format food recommendations as a conversational response."""
-        response = f"Get ready to eat your way through **{city}**! 🍽️😋\n\n"
+        response = f"Get ready to eat your way through **{city}**!\n\n"
         
         # Local specialties
         must_try = local_food.get("must_try_dishes", [])
         if must_try:
             response += "You absolutely *cannot* leave without trying:\n"
             for dish in must_try[:3]:
-                response += f"• **{dish.get('name')}**: {dish.get('description', '')}\n"
+                response += f"- **{dish.get('name')}**: {dish.get('description', '')}\n"
             response += "\n"
         
         # Restaurants
@@ -143,6 +129,7 @@ Be specific. Be a local. Not a guidebook."""
             for r in sorted_restaurants[:4]:
                 price = r.get("price_level") or ""
                 rating = r.get("rating", "N/A")
-                response += f"• **{r.get('name')}** {price} (⭐{rating}): {r.get('address', 'City center')}\n"
+                response += f"- **{r.get('name')}** {price} (rating {rating}): {r.get('address', 'City center')}\n"
         
         return response
+

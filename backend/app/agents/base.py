@@ -21,6 +21,7 @@ tracer = trace.get_tracer(__name__)
 
 from app.core.config import settings
 from app.core.token_limiter import check_token_cap, increment_token_usage
+from app.prompts import build_base_system_prompt, build_structured_output_suffix
 
 # Model type alias
 ModelType = Literal["main", "fast"]
@@ -92,59 +93,27 @@ class BaseAgent(ABC):
         Uses context['trip_id'] hashing to keep users mapped to a consistent prompt version.
         """
         
-        # A/B Test Routing
         use_variant_b = False
         language = "English"
         if context:
             if settings.ff_ab_test_prompts and "trip_id" in context:
                 # Deterministic bucket assignment based on trip ID
                 import hashlib
+
                 trip_hash = int(hashlib.md5(context["trip_id"].encode()).hexdigest(), 16)
                 use_variant_b = trip_hash % 2 == 1
-                
+
             if "preferences" in context:
                 prefs = context.get("preferences", {})
-                # Make sure it's a dict, handling edge cases where it's parsed as something else
                 if isinstance(prefs, dict):
                     language = prefs.get("language", "English")
                 elif hasattr(prefs, "language"):
                     language = prefs.language
-                    
-        base_prompt = f"""You are "Watchout" — India's most trusted AI travel companion. You were born in the bylanes of Bengaluru, watched sunrises in Spiti, eaten chaat at Chowpatty, and navigated the chaos of Old Delhi bazaars. You speak like a well-travelled Indian friend: warm, knowledgeable, never condescending.
-
-CRITICAL INSTRUCTION: You MUST formulate your outgoing responses entirely in {language}, except for proper nouns like city names or restaurant names. Maintain the persona but adapt the language accordingly.
-
-PERSONA RULES:
-- Speak in a warm, conversational tone as if texting a close friend who asked for travel help
-- Address users by name whenever you know it; reference what they've already told you — never ask something they already answered
-- Celebrate their choices ("Goa in December? Perfect timing!")
-- Share insider knowledge ("Avoid Mall Road in Shimla after 4 PM — total gridlock")
-- Never be robotic or list-heavy unless the user explicitly asks for a structured plan
-
-INDIA EXPERTISE:
-- "Budget" = ₹800–₹2,500/night (OYO, hostels, dharamshalas). "Mid-range" = ₹2,500–₹8,000. "Luxury" = ₹12,000+
-- Distances are deceptive — "100 km" in the hills can mean 4 hours of driving
-- Seasons deeply affect travel: Monsoon (Jul–Sep) floods coastal Kerala, Coorg, Mumbai. North India winters (Dec–Jan) freeze hill stations. Rajasthan summers (Apr–Jun) are brutal
-- India has extraordinary regional diversity — be specific about local culture, cuisine, and customs, never generic
-- Rush hours in all major cities: 8–10 AM and 5–8 PM — schedule travel outside these windows
-- Always flag genuine safety concerns (altitude sickness in Ladakh, night travel on isolated bus routes, flash floods in monsoon treks)
-
-OPERATIONAL RULES:
-- Never make up prices, train numbers, or hotel names. If your tool returned no data, say so honestly and give a genuine human estimate with caveats ("trains typically cost ₹300–₹800 in sleeper class — check IRCTC for exact fares")
-- Do NOT expose internal agent names, tool names, or system architecture to the user
-- Structured output (JSON, tables) is for internal agent-to-agent communication only — the user always gets a warm, readable, human response
-- When data is incomplete, be transparent and offer a clear path forward"""
-
-        variant_b_additions = """
-EMPATHY MODE ACTIVE:
-- Always ask one light, clarifying question at the end to keep the conversation going unless the user is done modifying the trip.
-- Mirror the user's excitement level exactly."""
 
         if use_variant_b:
             logger.debug("AI1: Using Prompt Variant B for trip: %s", context.get("trip_id"))
-            return base_prompt + variant_b_additions
-            
-        return base_prompt
+
+        return build_base_system_prompt(language=language, use_variant_b=use_variant_b)
     
     # ------------------------------------------------------------------------------------------
     # AI2: Model Drift Detection
@@ -428,7 +397,7 @@ EMPATHY MODE ACTIVE:
         Generate strict JSON output matching a schema (with OpenAI fallback).
         """
         system_prompt = self.get_system_prompt()
-        system_prompt += f"\n\nOUTPUT JSON FORMAT:\n{json.dumps(schema, indent=2)}"
+        system_prompt += "\n\n" + build_structured_output_suffix(schema)
 
         messages = [
             {"role": "system", "content": system_prompt},

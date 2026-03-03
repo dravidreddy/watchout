@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from app.core.config import settings
 from app.core.firebase_auth import verify_firebase_token
 from app.core.rate_limiter import limiter
+from app.prompts import build_screenshot_vision_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -65,13 +66,7 @@ async def analyze_screenshot(
         if len(decoded) > 4_000_000:
             raise HTTPException(status_code=413, detail="Image payload too large (max 4MB)")
 
-        prompt = (
-            "You are an expert travel destination identifier. "
-            "Analyze this image and extract any visible text, hashtags, and visual landmarks to determine the travel destination. "
-            "Return ONLY a valid JSON object in this exact format, with no markdown formatting or extra text: "
-            '{"detected_location": "City, Country", "context": "hashtags/description"}. '
-            "If no clear destination can be identified, return null for detected_location."
-        )
+        prompt = build_screenshot_vision_prompt()
 
         model = genai.GenerativeModel("gemini-1.5-flash")
         

@@ -3,6 +3,7 @@ Watchout Backend - Weather Agent
 """
 from typing import Dict, Any, Optional, List
 from app.agents.base import BaseAgent
+from app.prompts import build_weather_general_prompt, build_weather_narrative_prompt
 from app.tools.weather_api import get_weather_tool
 
 
@@ -30,13 +31,7 @@ class WeatherAgent(BaseAgent):
             
         if not cities:
             response_parts = []
-            async for chunk in self.stream(
-                f"""You are Watchout, India's warmest travel companion. Answer this weather or seasons question.
-
-Question: {user_input}
-
-Be specific about Indian seasons, regional variation, and practical advice (what to pack, what to expect, what to avoid)."""
-            ):
+            async for chunk in self.stream(build_weather_general_prompt(user_input)):
                 response_parts.append(chunk)
 
             return {
@@ -104,23 +99,13 @@ Be specific about Indian seasons, regional variation, and practical advice (what
         vibe_str = ", ".join(vibe) if isinstance(vibe, list) else str(vibe) if vibe else "general travel"
         trip_dates = preferences.get("start_date", "upcoming trip")
 
-        prompt = f"""You are Watchout's weather advisor — a practical, warm Indian travel companion.
-
-City: {city}
-Forecast data: {forecast}
-Weather alerts: {alerts}
-Traveler vibe: {vibe_str}
-Trip dates: {trip_dates}
-
-Write a 3–5 sentence weather briefing for this traveler. Make it genuinely useful:
-1. What's the weather actually LIKE (not just numbers — "pleasantly warm" vs "uncomfortably humid" vs "surprisingly cold once the sun sets")
-2. How does this affect their specific trip activities? (Beach day? Trekking? City sightseeing? Adjust per their vibe)
-3. What to PACK based on this forecast (one specific recommendation: "bring a light cardigan for evenings" or "rain jacket is essential, not optional")
-4. If there are alerts, explain what they MEAN for a traveler, not just repeat the technical text
-5. Any seasonal local tip (e.g., "Holi weekend means street colours everywhere — wear clothes you don't mind staining")
-
-Tone: warm and conversational, like a friend who just checked the weather for you. Don't be robotic or clinical.
-Keep it to 3–5 sentences max. No bullet points — flowing, natural prose."""
+        prompt = build_weather_narrative_prompt(
+            city=city,
+            forecast=forecast,
+            alerts=alerts,
+            vibe_str=vibe_str,
+            trip_dates=trip_dates,
+        )
 
         response_parts = []
         async for chunk in self.stream(prompt):
@@ -130,7 +115,8 @@ Keep it to 3–5 sentences max. No bullet points — flowing, natural prose."""
 
         # Prepend any raw alerts as a brief visual cue if they exist
         if alerts:
-            alert_text = "\n".join([f"⚠️ {a.get('headline', 'Weather alert')}" for a in alerts[:2]])
+            alert_text = "\n".join([f"ALERT: {a.get('headline', 'Weather alert')}" for a in alerts[:2]])
             return f"{alert_text}\n\n{result}"
 
         return result
+

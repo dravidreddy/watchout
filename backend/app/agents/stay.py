@@ -4,6 +4,7 @@ Watchout Backend - Stay Agent
 from typing import Dict, Any, Optional, List
 
 from app.agents.base import BaseAgent
+from app.prompts import build_stay_general_prompt, build_stay_recommendations_prompt
 from app.tools.google_places import get_places_tool
 
 
@@ -148,30 +149,22 @@ Provide real options with booking links."""
 
         # Budget price ranges for guidance
         budget_guide = {
-            "budget": "₹800–2,500/night",
-            "mid_range": "₹2,500–8,000/night",
-            "luxury": "₹12,000+/night"
+            "budget": "INR 800-2,500/night",
+            "mid_range": "INR 2,500-8,000/night",
+            "luxury": "INR 12,000+/night"
         }.get(budget, "mid-range pricing")
 
-        prompt = f"""You are Watchout's accommodation expert. Based on these {len(options)} hotel/stay options in {city}:
-{options[:5]}
-
-TRAVELER CONTEXT:
-- Number of people: {num_travelers}
-- Travel style: {travel_style}
-- Trip vibe: {vibe_str}
-- Budget level: {budget} ({budget_guide})
-- Trip dates: {start_date} to {end_date}
-
-Pick the top 3 stays. For each, tell me:
-1. WHY it suits THIS specific traveler (not generic reasons — reference their vibe and style directly)
-2. The neighborhood and what's within easy walking distance
-3. Any honest caution (noisy street? far from main attractions? limited dining nearby?)
-4. Estimated price per night in INR
-5. Who it's "best for" (e.g., "couples seeking quiet privacy" / "families needing space" / "backpackers wanting social buzzy hostels")
-
-Don't write brochure copy. Be a knowledgeable friend who has stayed in {city} and genuinely knows these properties.
-If one option is better value but another has a better location, say both clearly."""
+        prompt = build_stay_recommendations_prompt(
+            city=city,
+            options=options,
+            num_travelers=num_travelers,
+            travel_style=travel_style,
+            vibe_str=vibe_str,
+            budget=budget,
+            budget_guide=budget_guide,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
         schema = {
             "type": "object",
@@ -200,13 +193,7 @@ If one option is better value but another has a better location, say both clearl
         """Handle general accommodation queries with warmth and India context."""
         response_parts = []
 
-        async for chunk in self.stream(
-            f"""You are Watchout, India's warmest travel companion. Answer this accommodation question naturally and helpfully.
-
-Question: {query}
-
-Provide a warm, specific, India-knowledgeable answer. Include practical tips about booking platforms Indians use (MakeMyTrip, Goibibo, OYO, Booking.com) and any cultural context relevant to accommodation in India."""
-        ):
+        async for chunk in self.stream(build_stay_general_prompt(query)):
             response_parts.append(chunk)
 
         return {
@@ -231,14 +218,14 @@ Provide a warm, specific, India-knowledgeable answer. Include practical tips abo
         accommodations: Dict[str, Any]
     ) -> str:
         """Format accommodation options as a conversational response."""
-        response = f"I've found some great places to stay in **{city}**! 🏨\n\n"
+        response = f"I've found some great places to stay in **{city}**.\n\n"
         
         # Recommendations
         recommendations = accommodations.get("recommendations", [])
         if recommendations:
             response += "Based on your preferences, here are my top picks:\n\n"
             for rec in recommendations[:3]:
-                response += f"• **{rec.get('name', 'Option')}**: {rec.get('reason', '')} (Best for: {rec.get('best_for', 'All travelers')})\n"
+                response += f"- **{rec.get('name', 'Option')}**: {rec.get('reason', '')} (Best for: {rec.get('best_for', 'All travelers')})\n"
                 if rec.get("estimated_price"):
                     response += f"  (Approx. {rec['estimated_price']})\n"
             response += "\n"
@@ -250,14 +237,15 @@ Provide a warm, specific, India-knowledgeable answer. Include practical tips abo
             response += f"I found **{len(options)} options** ranging from hostels to luxury resorts.\n"
             top_rated = sorted(options, key=lambda x: x.get("rating", 0), reverse=True)[:3]
             for opt in top_rated:
-                stars = "⭐" * int(opt.get("rating", 0))
-                response += f"• **{opt.get('name')}** {stars} ({opt.get('rating', 'N/A')})\n"
+                stars = "*" * int(opt.get("rating", 0))
+                response += f"- **{opt.get('name')}** {stars} ({opt.get('rating', 'N/A')})\n"
             response += "\n"
 
         # Booking links
         links = accommodations.get("booking_links", {})
         if links:
             response += "You can check availability and book here:\n"
-            response += f"• [Booking.com]({links.get('booking', '')}) | [Airbnb]({links.get('airbnb', '')}) | [MakeMyTrip]({links.get('makemytrip', '')})"
+            response += f"- [Booking.com]({links.get('booking', '')}) | [Airbnb]({links.get('airbnb', '')}) | [MakeMyTrip]({links.get('makemytrip', '')})"
         
         return response
+

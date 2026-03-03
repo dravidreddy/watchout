@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional, List
 import json
 import logging
 from app.agents.base import BaseAgent
+from app.prompts import build_itinerary_parser_prompt
 
 logger = logging.getLogger(__name__)
 from app.services.conversation_manager import conversation_manager
@@ -32,23 +33,7 @@ class ItineraryParser(BaseAgent):
             
         history_str = conversation_manager.format_history_for_llm(history, max_messages=20)
         
-        prompt = f"""Extract the current planned itinerary from the following conversation history.
-If certain details are missing or not yet decided, omit them or leave them as null/empty.
-
-CONVERSATION HISTORY:
-{history_str}
-
-EXTRACTOR GOAL:
-Identify the current state of the trip plan including:
-1. Trip title (come up with a catchy generic one if not specified)
-2. List of cities mentioned as destinations
-3. Start and end dates (if mentioned, format as YYYY-MM-DD)
-4. Number of travelers
-5. Total budget in INR (if mentioned)
-6. A day-by-day breakdown of activities mentioned so far.
-
-If the user just started and hasn't fixed anything, return the best guess based on the chat.
-"""
+        prompt = build_itinerary_parser_prompt(history_str)
 
         schema = {
             "type": "object",
