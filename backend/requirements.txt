@@ -44,6 +44,7 @@ tenacity>=8.2.0
 structlog>=24.1.0  # Structured logging for observability
 apscheduler>=3.10.0  # Payment reconciliation cron job
 slowapi>=0.1.9  # Rate limiting
+redis>=5.0.0  # Required by slowapi/limits when REDIS_URL storage is enabled
 pyfailsafe  # SC2: Circuit breaker
 opencv-python-headless>=4.9.0  # Visual frame extraction from Reels
 
