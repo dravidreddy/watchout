@@ -147,6 +147,32 @@ Output structured itineraries with specific times and durations.""",
         interests = preferences.get("interests", [])
         num_travelers = preferences.get("num_travelers", 1)
         travel_style = preferences.get("travel_style", "")
+        trip_motivation = preferences.get("trip_motivation", "")
+        spontaneity = preferences.get("spontaneity", "moderate")
+        special_requirements = preferences.get("special_requirements", "none")
+
+        # Bug 4 fix: extract origin city and transport preference so the LLM
+        # knows what destinations are reachable and how the group is travelling.
+        origin_city = preferences.get("origin_city", "")
+        transport_preference = (
+            preferences.get("transport")
+            or preferences.get("transport_preference")
+            or preferences.get("travel_style", "flexible")
+        )
+
+        # Bug 5 fix: derive a group-size-aware accommodation hint so the LLM
+        # recommends villas/family rooms for groups rather than hostels/singles.
+        if isinstance(num_travelers, int) and num_travelers >= 4:
+            group_accommodation_hint = (
+                f"Group of {num_travelers}: prefer villas, family rooms, or serviced apartments. "
+                "Avoid hostels and single/double-bed rooms."
+            )
+        elif isinstance(num_travelers, int) and num_travelers == 2:
+            group_accommodation_hint = "Couple: prioritise boutique hotels or romantic stays."
+        elif isinstance(num_travelers, int) and num_travelers == 1:
+            group_accommodation_hint = "Solo traveller: hostels, guesthouses, or budget hotels are fine."
+        else:
+            group_accommodation_hint = ""
 
         # Translate pace to concrete activity count guidance
         pace_guide = {
@@ -177,10 +203,18 @@ Output structured itineraries with specific times and durations.""",
             pace=pace,
             pace_guide=pace_guide,
             travel_style=travel_style,
+            trip_motivation=trip_motivation,
+            spontaneity=spontaneity,
+            special_requirements=special_requirements,
             interests=interests,
             food_prefs=food_prefs,
             weather_context=weather_context,
             places_data=places_data,
+            # Bug 4 additions:
+            origin_city=origin_city,
+            transport_preference=transport_preference,
+            # Bug 5 addition:
+            group_accommodation_hint=group_accommodation_hint,
         )
 
     
@@ -216,19 +250,44 @@ Output structured itineraries with specific times and durations.""",
         )
     
     def _generate_summary(self, plan: Dict[str, Any]) -> str:
-        """Generate premium markdown summary in a stable day-by-day format."""
-        title = plan.get("title", "Trip Plan")
+        """Generate a beautiful, soothing, well-structured markdown summary of the trip plan."""
+        title = plan.get("title", "Your Trip")
         raw_days = plan.get("days", [])
         days = raw_days if isinstance(raw_days, list) else []
         total_days = len(days) if days else int(plan.get("num_days") or 1)
+        highlights = plan.get("highlights", [])
+        total_budget = plan.get("total_estimated_budget")
 
-        lines = [f"# ✈️ {total_days}-Day {title} Itinerary", ""]
+        CATEGORY_ICONS = {
+            "sightseeing": "🏛️", "nature": "🌿", "beach": "🏖️", "food": "🍽️",
+            "adventure": "🧗", "culture": "🎭", "temple": "🛕", "shopping": "🛍️",
+            "relaxation": "🧘", "nightlife": "🎶", "transport": "🚂", "other": "📍",
+        }
+        TIME_ICONS = {"morning": "🌅", "afternoon": "☀️", "evening": "🌙"}
+
+        def get_icon(activity: dict) -> str:
+            cat = str(activity.get("category") or "").lower()
+            for key in CATEGORY_ICONS:
+                if key in cat:
+                    return CATEGORY_ICONS[key]
+            return "📍"
+
+        lines: List[str] = []
+
+        # Header block
+        lines.append(f"# ✈️ {total_days}-Day {title}")
+        if highlights:
+            lines.append(f"> **Highlights:** {' · '.join(highlights[:4])}")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
 
         for idx, day in enumerate(days, start=1):
             if not isinstance(day, dict):
                 continue
             day_number = day.get("day_number") or idx
-            day_label = day.get("theme") or day.get("city") or "Highlights"
+            day_label = day.get("theme") or day.get("city") or f"Day {idx}"
+            city = day.get("city", "")
             activities = day.get("activities") if isinstance(day.get("activities"), list) else []
 
             morning: List[str] = []
@@ -240,45 +299,76 @@ Output structured itineraries with specific times and durations.""",
                 if not isinstance(activity, dict):
                     continue
                 name = str(activity.get("name") or "Activity").strip()
+                icon = get_icon(activity)
                 time_text = str(activity.get("time") or "").strip()
+                desc = str(activity.get("description") or "").strip()
+                tip = str(activity.get("tips") or "").strip()
+
+                entry = f"{icon} **{name}**"
+                if time_text:
+                    entry += f" `{time_text}`"
+                if desc:
+                    entry += f" — {desc[:90]}"
+                if tip:
+                    entry += f" *(💡 {tip[:60]})*"
+
                 hour = None
                 if ":" in time_text:
                     try:
                         hour = int(time_text.split(":")[0])
                     except Exception:
                         hour = None
-                if hour is None:
-                    bucket = "afternoon"
-                elif hour < 12:
-                    bucket = "morning"
-                elif hour < 17:
-                    bucket = "afternoon"
-                else:
-                    bucket = "evening"
 
-                if bucket == "morning":
-                    morning.append(name)
-                elif bucket == "evening":
-                    evening.append(name)
+                if hour is None:
+                    afternoon.append(entry)
+                elif hour < 12:
+                    morning.append(entry)
+                elif hour < 17:
+                    afternoon.append(entry)
                 else:
-                    afternoon.append(name)
+                    evening.append(entry)
 
                 try:
                     day_budget += int(activity.get("estimated_cost") or 0)
                 except Exception:
                     pass
 
-            lines.append(f"## Day {day_number} - {day_label}")
-            lines.append(f"- Morning: {', '.join(morning) if morning else 'Easy local start'}")
-            lines.append(f"- Afternoon: {', '.join(afternoon) if afternoon else 'Core sightseeing'}")
-            lines.append(f"- Evening: {', '.join(evening) if evening else 'Dinner and downtime'}")
-            lines.append(f"- Budget estimate: INR {max(day_budget, 0):,}")
-            lines.append("- Stay suggestion: Near the main day activities for easy transfers")
+            city_str = f" · {city}" if city else ""
+            lines.append(f"## 📅 Day {day_number}{city_str} — *{day_label}*")
             lines.append("")
 
-        total_budget = plan.get("total_estimated_budget")
+            for period, bucket in [("Morning", morning), ("Afternoon", afternoon), ("Evening", evening)]:
+                if bucket:
+                    lines.append(f"**{TIME_ICONS[period.lower()]} {period}**")
+                    for item in bucket:
+                        lines.append(f"  - {item}")
+                    lines.append("")
+
+            # Meals section
+            meals = day.get("meals", [])
+            if meals and isinstance(meals, list):
+                meal_parts = []
+                for m in meals:
+                    if isinstance(m, dict):
+                        mtype = m.get("type", "").capitalize()
+                        sug = m.get("suggestion", "")
+                        if mtype and sug:
+                            meal_parts.append(f"{mtype}: {sug}")
+                if meal_parts:
+                    lines.append(f"🍽️ **Meals:** {' · '.join(meal_parts)}")
+                    lines.append("")
+
+            if day_budget > 0:
+                lines.append(f"💰 **Day estimate:** ₹{max(day_budget, 0):,}")
+                lines.append("")
+
+            lines.append("---")
+            lines.append("")
+
         if total_budget:
-            lines.append(f"**Trip budget estimate:** INR {int(total_budget):,}")
+            lines.append(f"### 💳 Total Trip Estimate: ₹{int(total_budget):,}")
+            lines.append("")
+        lines.append("*Need to tweak anything? Just say the word — we'll make it perfect for you!* 🎒✨")
 
         return "\n".join(lines).strip()
     

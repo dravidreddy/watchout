@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Home, Briefcase, Compass, User, HelpCircle, Plus, MessageSquarePlus } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useAppStore } from '@/lib/appStore';
+import { useDragResize } from '@/hooks/useDragResize';
 
 const navItems = [
     { name: 'Home', href: '/home', icon: Home },
@@ -19,6 +21,14 @@ const bottomItems = [
 
 export function Sidebar() {
     const pathname = usePathname();
+    const { isSidebarOpen } = useAppStore();
+    const { panelWidth, handleProps, isDragging } = useDragResize({
+        edge: 'right',
+        initialWidth: 256,
+        minWidth: 180,
+        maxWidth: 400,
+        storageKey: 'sidebar-width',
+    });
 
     const NavLink = ({ item }: { item: typeof navItems[0] }) => {
         const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
@@ -39,7 +49,7 @@ export function Sidebar() {
                         }}
                     />
                     <span
-                        className="font-medium"
+                        className="font-medium truncate"
                         style={{
                             color: isActive ? 'var(--accent-dark)' : 'var(--text-primary)'
                         }}
@@ -49,7 +59,7 @@ export function Sidebar() {
                     {isActive && (
                         <motion.div
                             layoutId="activeSidebar"
-                            className="ml-auto w-1.5 h-1.5 rounded-full"
+                            className="ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0"
                             style={{ background: 'var(--accent)' }}
                         />
                     )}
@@ -60,8 +70,10 @@ export function Sidebar() {
 
     return (
         <aside
-            className="hidden md:flex flex-col w-64 h-screen fixed left-0 top-0 z-30"
+            className={`hidden md:flex flex-col h-screen fixed left-0 top-0 z-30 transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+                }`}
             style={{
+                width: panelWidth,
                 background: 'var(--bg-secondary)',
                 borderRight: '1px solid var(--border-subtle)'
             }}
@@ -122,6 +134,22 @@ export function Sidebar() {
                         <NavLink key={item.name} item={item} />
                     ))}
                 </div>
+            </div>
+
+            {/* Drag handle — sits on the right edge */}
+            <div
+                {...handleProps}
+                className={`absolute top-0 right-0 w-[5px] h-full z-50 group cursor-col-resize flex items-center justify-center`}
+                style={{ touchAction: 'none' }}
+            >
+                {/* Visual pill that appears on hover / while dragging */}
+                <div
+                    className={`w-[3px] h-12 rounded-full transition-all duration-150 ${isDragging
+                            ? 'opacity-100 scale-y-110'
+                            : 'opacity-0 group-hover:opacity-100'
+                        }`}
+                    style={{ background: 'var(--accent)' }}
+                />
             </div>
         </aside>
     );

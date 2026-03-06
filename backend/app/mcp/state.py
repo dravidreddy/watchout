@@ -71,6 +71,10 @@ REQUIRED_FIELDS = [
     "travel_vibe",
     "origin_city",
     "pace",
+    "travel_style",
+    "trip_motivation",
+    "spontaneity",
+    "special_requirements",
 ]
 
 # Fields we can infer — never ask for these if inference is possible

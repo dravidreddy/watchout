@@ -2,43 +2,32 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Search, Bell, ChevronDown, Settings, LogOut, User } from 'lucide-react';
+import { Menu, Bell, ChevronDown, Settings, LogOut, User } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { useAppStore } from '@/lib/appStore';
 
 export function TopBar() {
     const { user, logout } = useAuth();
     const [showUserMenu, setShowUserMenu] = useState(false);
-    const [searchQuery, setSearchQuery] = useState('');
+    const { isSidebarOpen, toggleSidebar } = useAppStore();
 
     return (
         <header
-            className="hidden md:flex items-center justify-between h-16 px-6 fixed top-0 right-0 z-20"
+            className="hidden md:flex items-center justify-between h-16 px-6 fixed top-0 right-0 z-20 transition-all duration-300"
             style={{
-                left: '256px', // Sidebar width
+                left: isSidebarOpen ? '256px' : '0px',
                 background: 'var(--bg-primary)',
                 borderBottom: '1px solid rgba(0,0,0,0.05)'
             }}
         >
-            {/* Search Bar */}
-            <div className="flex-1 max-w-xl">
-                <div className="relative">
-                    <Search
-                        className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5"
-                        style={{ color: 'var(--text-tertiary)' }}
-                    />
-                    <input
-                        type="text"
-                        placeholder="Search trips, destinations, or ask AI..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 rounded-xl transition-all"
-                        style={{
-                            background: 'var(--bg-secondary)',
-                            border: '1px solid rgba(0,0,0,0.05)',
-                            color: 'var(--text-primary)'
-                        }}
-                    />
-                </div>
+            {/* Left Section (Menu Toggle) */}
+            <div className="flex items-center flex-1">
+                <button
+                    onClick={toggleSidebar}
+                    className="p-2 -ml-2 rounded-lg hover:bg-black/5 transition-colors"
+                >
+                    <Menu className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
+                </button>
             </div>
 
             {/* Right Section */}

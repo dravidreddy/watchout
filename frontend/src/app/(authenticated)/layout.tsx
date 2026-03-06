@@ -6,6 +6,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { BottomNav } from '@/components/navigation/BottomNav';
 import { Sidebar } from '@/components/navigation/Sidebar';
 import { TopBar } from '@/components/navigation/TopBar';
+import { useAppStore } from '@/lib/appStore';
 
 export default function AuthenticatedLayout({
     children,
@@ -14,6 +15,7 @@ export default function AuthenticatedLayout({
 }) {
     const { isAuthenticated, isLoading } = useAuth();
     const router = useRouter();
+    const { isSidebarOpen } = useAppStore();
 
     useEffect(() => {
         if (!isLoading && !isAuthenticated) {
@@ -54,7 +56,7 @@ export default function AuthenticatedLayout({
             <TopBar />
 
             {/* Main content area */}
-            <main className="pb-20 md:pb-0 md:pl-64 md:pt-16">
+            <main className={`pb-20 md:pb-0 md:pt-16 transition-all duration-300 ${isSidebarOpen ? 'md:pl-64' : 'md:pl-0'}`}>
                 {children}
             </main>
 

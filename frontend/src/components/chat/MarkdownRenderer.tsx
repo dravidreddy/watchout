@@ -106,6 +106,27 @@ interface MarkdownRendererProps {
     coerceStructuredContent?: boolean;
 }
 
+/**
+ * Lines that start with an emoji followed by text (agent option lines) get
+ * converted into markdown list items so each appears on its own line.
+ * Without this, react-markdown collapses single \n into spaces (CommonMark).
+ */
+const EMOJI_OPTION_RE = /^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)\s+.+$/u;
+
+function normalizeOptionLines(text: string): string {
+    return text
+        .split('\n')
+        .map((line) => {
+            const trimmed = line.trimStart();
+            // If it looks like an emoji option line and is NOT already a list item, convert it.
+            if (EMOJI_OPTION_RE.test(trimmed) && !trimmed.startsWith('-') && !trimmed.startsWith('*')) {
+                return `- ${trimmed}`;
+            }
+            return line;
+        })
+        .join('\n');
+}
+
 export function MarkdownRenderer({
     content,
     coerceStructuredContent = false,
@@ -121,7 +142,8 @@ export function MarkdownRenderer({
         })
         : normalized;
 
-    const segments = parseMarkdownSegments(safeContent);
+    const processedContent = normalizeOptionLines(safeContent);
+    const segments = parseMarkdownSegments(processedContent);
 
     return (
         <div className="space-y-3">

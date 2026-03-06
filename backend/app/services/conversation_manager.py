@@ -190,7 +190,7 @@ class ConversationManager:
         user_id: str,
         current_message: str,
         include_history: bool = True,
-        history_limit: int = 10
+        history_limit: int = 30  # Bug 7 fix: was 10, increased so early onboarding answers stay visible
     ) -> Dict[str, Any]:
         """
         Build comprehensive context for agents.

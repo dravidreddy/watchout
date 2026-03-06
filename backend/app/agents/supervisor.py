@@ -48,13 +48,16 @@ ALLOWED_AGENTS = {
 
 CRITICAL_FIELDS = [
     "origin_city",
-    "destinations_or_region",
+    "destinations",  # Bug 3 fix: was destinations_or_region, but clarification writes destinations
     "duration_days",
     "num_travelers",
     "budget_range",
     "pace",
     "travel_vibe",
     "travel_style",
+    "trip_motivation",
+    "spontaneity",
+    "special_requirements",
 ]
 
 
@@ -807,14 +810,19 @@ class SupervisorAgent(BaseAgent):
         missing = []
         for f in CRITICAL_FIELDS:
             val = preferences.get(f)
-            # For destinations_or_region, also check the 'destinations' key used by clarification agent
-            if f == "destinations_or_region":
-                val = val or preferences.get("destinations")
-                # If user said "surprise me", destinations = ["agent_surprise"] — treat as satisfied
+            # Bug 3 fix: destinations is now the standard key, no alias needed.
+            # If user said "surprise me", destinations = ["agent_surprise"] — treat as satisfied
+            if f == "destinations":
                 if isinstance(val, list) and "agent_surprise" in val:
                     continue
                 if preferences.get("destination_open"):
                     continue
+            # special_requirements: any non-empty value (including "none") is satisfied
+            if f == "special_requirements":
+                if val is not None and val != "":
+                    continue
+                missing.append(f)
+                continue
             if not val:
                 missing.append(f)
         return missing

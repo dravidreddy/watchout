@@ -37,6 +37,10 @@ Be conversational, concise, and never robotic.""",
             "duration_days",
             "num_travelers",
             "budget_range",
+            "travel_style",
+            "trip_motivation",
+            "spontaneity",
+            "special_requirements",
             "travel_vibe"
         ]
         # Priority order - ask the most critical fields first; vibe is inferable and asked last
@@ -45,6 +49,10 @@ Be conversational, concise, and never robotic.""",
             "duration_days",
             "num_travelers",
             "budget_range",
+            "travel_style",
+            "trip_motivation",
+            "spontaneity",
+            "special_requirements",
             "travel_vibe",
         ]
     
@@ -85,6 +93,8 @@ Be conversational, concise, and never robotic.""",
 
         # Remove fields already satisfied in current_prefs
         # This prevents the LLM from asking questions we already know the answer to.
+        # Bug 1 fix: added special_requirements, travel_style, trip_motivation, spontaneity
+        # Bug 2 fix: ensure budget_range is checked before is_complete can be True
         satisfied = {
             "travel_vibe": bool(current_prefs.get("travel_vibe")),
             "budget_range": bool(current_prefs.get("budget_range")),
@@ -93,6 +103,12 @@ Be conversational, concise, and never robotic.""",
             "num_travelers": current_prefs.get("num_travelers") is not None,
             "origin_city": bool(current_prefs.get("origin_city")),
             "pace": bool(current_prefs.get("pace")),
+            # Previously missing — caused infinite re-ask loops:
+            "travel_style": bool(current_prefs.get("travel_style")),
+            "trip_motivation": bool(current_prefs.get("trip_motivation")),
+            "spontaneity": bool(current_prefs.get("spontaneity")),
+            "special_requirements": current_prefs.get("special_requirements") is not None
+                                   and current_prefs.get("special_requirements") != "",
         }
         effective_missing = [
             f for f in (missing_fields or self.required_fields)
@@ -120,6 +136,10 @@ Be conversational, concise, and never robotic.""",
                         "budget_range": {"type": "string"},
                         "travel_vibe": {"type": "array", "items": {"type": "string"}},
                         "pace": {"type": "string"},
+                        "travel_style": {"type": "string"},
+                        "trip_motivation": {"type": "string"},
+                        "spontaneity": {"type": "string"},
+                        "special_requirements": {"type": "string"},
                         "interests": {"type": "array", "items": {"type": "string"}},
                         "city_segments": {
                             "type": "array",

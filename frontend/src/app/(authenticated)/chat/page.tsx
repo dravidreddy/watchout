@@ -387,7 +387,7 @@ export default function ChatPage() {
     ];
 
     return (
-        <div className="flex flex-col h-[calc(100vh-4rem)] md:h-screen md:flex-row relative">
+        <div className="flex flex-col h-[calc(100dvh-5rem)] md:h-[calc(100vh-4rem)] overflow-hidden lg:flex-row relative">
             {/* Verification Modal */}
             {isVerifyingLocation && extractedLocation && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95 duration-200">
@@ -431,8 +431,8 @@ export default function ChatPage() {
                 currentTripId={activeTripId || undefined}
             />
 
-            {/* Chat Section */}
-            <div className="flex flex-col flex-1 md:w-[40%] md:min-w-[400px] md:border-r" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
+            {/* Chat Section — full width, centered content */}
+            <div className="flex flex-col flex-1" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
                 {/* Header */}
                 <header
                     className="flex items-center justify-between px-4 py-3"
@@ -454,13 +454,15 @@ export default function ChatPage() {
                             </p>
                         </div>
                     </div>
-                    <button
-                        onClick={() => setShowChatHistory(!showChatHistory)}
-                        className={`p-2 rounded-lg transition-colors ${showChatHistory ? 'bg-accent text-white' : 'hover:bg-black/5'} z-50`}
-                        title="Chat History"
-                    >
-                        <History className="w-5 h-5" />
-                    </button>
+                    {!showChatHistory && (
+                        <button
+                            onClick={() => setShowChatHistory(!showChatHistory)}
+                            className="p-2 rounded-lg transition-colors hover:bg-black/5 z-50"
+                            title="Chat History"
+                        >
+                            <History className="w-5 h-5" />
+                        </button>
+                    )}
                 </header>
 
                 {/* ... (rest of the component) ... */}
@@ -477,81 +479,80 @@ export default function ChatPage() {
                 <div
                     ref={messagesContainerRef}
                     onScroll={handleMessagesScroll}
-                    className="flex-1 overflow-y-auto p-4 space-y-4"
+                    className="flex-1 overflow-y-auto py-6"
                     style={{ background: 'var(--bg-primary)' }}
                 >
-                    {messages.map((message, index) => (
-                        <MessageBubble
-                            key={message.id}
-                            message={message}
-                            tripId={activeTripId}
-                            groupedWithPrevious={index > 0 && messages[index - 1]?.role === message.role}
-                            onDelete={handleDeleteMessage}
-                            onEdit={handleEditMessage}
-                            isPending={isStreaming && index === messages.length - 1 && message.role === 'assistant' && !message.content.trim()}
-                        />
-                    ))}
-
-                    {/* Phase 4: Confirmation Card */}
-                    {pendingConfirmation && !isStreaming && (
-                        <div className="flex justify-start">
-                            <ConfirmationCard
-                                data={pendingConfirmation}
-                                onConfirm={() => {
-                                    setPendingConfirmation(null);
-                                    sendMessage('Yes, everything looks perfect. Please generate my itinerary!');
-                                }}
-                                onEdit={() => {
-                                    setPendingConfirmation(null);
-                                    setInput('I\'d like to change ');
-                                }}
+                    <div className="mx-auto max-w-4xl w-full px-6 space-y-4">
+                        {messages.map((message, index) => (
+                            <MessageBubble
+                                key={message.id}
+                                message={message}
+                                tripId={activeTripId}
+                                groupedWithPrevious={index > 0 && messages[index - 1]?.role === message.role}
+                                onDelete={handleDeleteMessage}
+                                onEdit={handleEditMessage}
+                                isPending={isStreaming && index === messages.length - 1 && message.role === 'assistant' && !message.content.trim()}
                             />
-                        </div>
-                    )}
+                        ))}
 
+                        {/* Phase 4: Confirmation Card */}
+                        {pendingConfirmation && !isStreaming && (
+                            <div className="flex justify-start">
+                                <ConfirmationCard
+                                    data={pendingConfirmation}
+                                    onConfirm={() => {
+                                        setPendingConfirmation(null);
+                                        sendMessage('Yes, everything looks perfect. Please generate my itinerary!');
+                                    }}
+                                    onEdit={() => {
+                                        setPendingConfirmation(null);
+                                        setInput('I\'d like to change ');
+                                    }}
+                                />
+                            </div>
+                        )}
+                    </div>
                 </div>
 
-                {/* Quick Actions */}
-                <div className="flex gap-2 px-4 py-2 overflow-x-auto hide-scrollbar" style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                    {quickActions.map((action) => (
-                        <button
-                            key={action.label}
-                            onClick={() => handleQuickAction(action.label)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors hover:bg-black/5"
-                            style={{
-                                background: 'var(--bg-secondary)',
-                                color: 'var(--text-secondary)',
-                                border: '1px solid rgba(0,0,0,0.05)'
-                            }}
-                        >
-                            <span>{action.icon}</span>
-                            <span>{action.label}</span>
-                        </button>
-                    ))}
-                </div>
+                {/* Floating Island Input Section */}
+                <div className="mx-auto max-w-4xl w-full px-6 pb-6">
+                    {/* Quick Actions */}
+                    <div className="flex gap-2 pb-2 overflow-x-auto hide-scrollbar">
+                        {quickActions.map((action) => (
+                            <button
+                                key={action.label}
+                                onClick={() => handleQuickAction(action.label)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-all hover:scale-105"
+                                style={{
+                                    background: 'var(--bg-secondary)',
+                                    color: 'var(--text-secondary)',
+                                    border: '1px solid rgba(128,128,128,0.15)'
+                                }}
+                            >
+                                <span>{action.icon}</span>
+                                <span>{action.label}</span>
+                            </button>
+                        ))}
+                    </div>
 
-                {/* Input */}
-                <form
-                    onSubmit={handleSubmit}
-                    className="p-4"
-                    style={{
-                        background: 'var(--bg-secondary)',
-                        borderTop: '1px solid rgba(0,0,0,0.05)'
-                    }}
-                >
-                    <div className="flex items-center gap-2">
+                    {/* Input form — floating island */}
+                    <form
+                        onSubmit={handleSubmit}
+                        className="flex items-center gap-2 px-3 py-2.5 rounded-2xl"
+                        style={{
+                            background: 'var(--bg-secondary)',
+                            border: '1px solid rgba(128,128,128,0.18)',
+                            boxShadow: '0 8px 32px rgba(0,0,0,0.22), 0 2px 8px rgba(0,0,0,0.12)'
+                        }}
+                    >
                         <input
                             type="text"
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             placeholder="Tell me about your dream trip..."
                             disabled={isStreaming}
-                            className="flex-1 px-4 py-3 rounded-xl transition-all"
-                            style={{
-                                background: 'var(--bg-primary)',
-                                border: '1px solid rgba(0,0,0,0.05)',
-                                color: 'var(--text-primary)'
-                            }}
+                            className="flex-1 px-3 py-1.5 bg-transparent outline-none text-sm"
+                            style={{ color: 'var(--text-primary)' }}
                         />
                         <input
                             type="file"
@@ -565,17 +566,15 @@ export default function ChatPage() {
                             onClick={() => fileInputRef.current?.click()}
                             disabled={isStreaming || isUploadingImage}
                             title="Upload Screenshot"
-                            className="p-3 mr-1 rounded-xl text-purple-500 bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/20 transition-all disabled:opacity-50"
+                            className="p-2 rounded-xl text-purple-500 bg-purple-500/10 hover:bg-purple-500/20 transition-all disabled:opacity-50 flex-shrink-0"
                         >
                             {isUploadingImage ? <Loader2 className="w-5 h-5 animate-spin" /> : <ImageIcon className="w-5 h-5" />}
                         </button>
                         <button
                             type="submit"
                             disabled={isStreaming || !input.trim()}
-                            className="p-3 rounded-xl text-white transition-all disabled:opacity-50"
-                            style={{
-                                background: 'var(--accent)',
-                            }}
+                            className="p-2 rounded-xl text-white transition-all disabled:opacity-50 hover:scale-105 flex-shrink-0"
+                            style={{ background: 'var(--accent)' }}
                         >
                             {isStreaming ? (
                                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -583,9 +582,9 @@ export default function ChatPage() {
                                 <Send className="w-5 h-5" />
                             )}
                         </button>
-                    </div>
-                </form>
-            </div>
+                    </form>
+                </div>
+            </div>{/* end Chat Section */}
 
             {/* Itinerary Modal — show as soon as the itinerary is generated */}
             {(savedTripId || extractedItinerary) && (
