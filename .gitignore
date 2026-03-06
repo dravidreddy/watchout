@@ -85,3 +85,17 @@ backend/app/workers/
 # k6 load test results
 k6/results/
 k6/*.json
+
+# Excluded non-production folders
+ProjectReport/
+docs/
+k6/
+tests/
+frontend/tests/
+backend/tests/
+
+# Excluded non-production files
+presentation_content.md
+pyrightconfig.json
+backend/debug_db.py
+
