@@ -8,6 +8,7 @@ from slowapi.errors import RateLimitExceeded
 from fastapi import Request, FastAPI
 from fastapi.responses import JSONResponse
 from typing import Callable
+import hashlib
 import logging
 
 from app.core.config import settings
@@ -21,8 +22,24 @@ def get_user_identifier(request: Request) -> str:
     Prioritizes authenticated user ID over IP address.
     """
     # Try to get user ID from Firebase token (if authenticated)
-    if hasattr(request.state, "user_id"):
-        return f"user:{request.state.user_id}"
+    state_user_id = getattr(request.state, "user_id", None)
+    if state_user_id:
+        return f"user:{state_user_id}"
+
+    # Fallback: fingerprint bearer token so limits are not purely IP-based
+    # before dependency execution populates request.state.user_id.
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        token = auth.split(" ", 1)[1].strip()
+        if token:
+            digest = hashlib.sha256(token.encode()).hexdigest()[:16]
+            return f"token:{digest}"
+
+    # Test bypass token path for local/dev scenarios.
+    bypass = request.headers.get("x-test-bypass-token", "").strip()
+    if bypass:
+        digest = hashlib.sha256(bypass.encode()).hexdigest()[:16]
+        return f"bypass:{digest}"
     
     # Fall back to IP address for unauthenticated requests
     return f"ip:{get_remote_address(request)}"

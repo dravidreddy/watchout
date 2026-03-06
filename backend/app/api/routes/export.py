@@ -16,14 +16,17 @@ async def export_itinerary_to_pdf(
     """Generate and return a PDF for a trip itinerary."""
     user_id = token_data["uid"]
     trips = trips_collection()
-    
+
+    query_conditions = [{"trip_id": trip_id}]
     try:
-        trip = await trips.find_one({
-            "_id": ObjectId(trip_id),
-            "user_id": user_id
-        })
+        query_conditions.append({"_id": ObjectId(trip_id)})
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid trip ID")
+        pass
+
+    trip = await trips.find_one({
+        "$or": query_conditions,
+        "user_id": user_id,
+    })
         
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")

@@ -40,18 +40,23 @@ class UserDeletionService:
         trips_collection = db["trips"]
         result = await trips_collection.delete_many({"user_id": user_id})
         stats["trips"] = result.deleted_count
-        
-        # 3. Delete all conversations
+
+        # 3. Delete all chat messages (primary chat history collection)
+        messages_collection = db["messages"]
+        result = await messages_collection.delete_many({"user_id": user_id})
+        stats["messages"] = result.deleted_count
+
+        # 4. Delete all conversations (legacy collection)
         conversations_collection = db["conversations"]
         result = await conversations_collection.delete_many({"user_id": user_id})
         stats["conversations"] = result.deleted_count
-        
-        # 4. Delete vector memories
+
+        # 5. Delete vector memories
         memories_collection = db["memories"]
         result = await memories_collection.delete_many({"user_id": user_id})
         stats["memories"] = result.deleted_count
         
-        # 5. Delete consent records (keep for audit trail or delete per policy)
+        # 6. Delete consent records (keep for audit trail or delete per policy)
         # For now, we keep consent records for legal audit trail
         consent_collection = ConsentService.get_collection()
         result = await consent_collection.update_many(
@@ -60,7 +65,7 @@ class UserDeletionService:
         )
         stats["consents_marked"] = result.modified_count
         
-        # 6. Anonymize payment records (CANNOT delete for financial audit)
+        # 7. Anonymize payment records (CANNOT delete for financial audit)
         payments_collection = db["payments"]
         result = await payments_collection.update_many(
             {"user_id": user_id},
@@ -74,12 +79,12 @@ class UserDeletionService:
         )
         stats["payments_anonymized"] = result.modified_count
         
-        # 7. Delete user preferences
+        # 8. Delete user preferences
         preferences_collection = db["user_preferences"]
         result = await preferences_collection.delete_many({"user_id": user_id})
         stats["preferences"] = result.deleted_count
         
-        # 8. Log deletion for compliance audit trail
+        # 9. Log deletion for compliance audit trail
         deletion_logs_collection = db["deletion_logs"]
         await deletion_logs_collection.insert_one({
             "user_id": user_id,
@@ -108,6 +113,7 @@ class UserDeletionService:
         # Check each collection
         checks["user_profile"] = await db["users"].count_documents({"firebase_id": user_id}) > 0
         checks["trips"] = await db["trips"].count_documents({"user_id": user_id}) > 0
+        checks["messages"] = await db["messages"].count_documents({"user_id": user_id}) > 0
         checks["conversations"] = await db["conversations"].count_documents({"user_id": user_id}) > 0
         checks["memories"] = await db["memories"].count_documents({"user_id": user_id}) > 0
         checks["preferences"] = await db["user_preferences"].count_documents({"user_id": user_id}) > 0

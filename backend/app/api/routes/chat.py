@@ -196,14 +196,20 @@ async def stream_chat(
         auto_title = chat_request.message[:60].strip()
         if len(chat_request.message) > 60:
             auto_title += "…"
-        background_tasks.add_task(
-            lambda t=chat_request.trip_id, uid=user_id, title=auto_title: (
-                db.trips.update_one(
+        async def _set_initial_title(
+            t: str = chat_request.trip_id,
+            uid: str = user_id,
+            title: str = auto_title,
+        ) -> None:
+            try:
+                await db.trips.update_one(
                     {"trip_id": t, "user_id": uid, "title": "New Conversation"},
                     {"$set": {"title": title, "updated_at": datetime.now(timezone.utc)}}
                 )
-            )
-        )
+            except Exception as exc:
+                logger.warning("Initial title update failed: %s", exc)
+
+        background_tasks.add_task(_set_initial_title)
 
     # ── 4. Build streaming response ──────────────────────────────────────────
 
@@ -486,7 +492,10 @@ async def delete_conversation(
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     await db.trips.delete_one({"_id": trip["_id"]})
-    await db.messages.delete_many({"trip_id": trip.get("trip_id") or str(trip["_id"])})
+    await db.messages.delete_many({
+        "trip_id": trip.get("trip_id") or str(trip["_id"]),
+        "user_id": user_id,
+    })
     return {"status": "deleted"}
 
 

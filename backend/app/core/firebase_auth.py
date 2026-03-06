@@ -3,7 +3,7 @@ Watchout Backend - Firebase Authentication
 """
 import firebase_admin
 from firebase_admin import auth, credentials
-from fastapi import HTTPException, Security, Depends, Header
+from fastapi import HTTPException, Security, Depends, Header, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional, Dict, Any
 import logging
@@ -47,8 +47,9 @@ security = HTTPBearer(auto_error=False)
 
 
 async def verify_firebase_token(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Security(security),
-    x_test_bypass_token: Optional[str] = Header(None)
+    x_test_bypass_token: Optional[str] = Header(None),
 ) -> Dict[str, Any]:
     """
     Verify Firebase ID token from Authorization header.
@@ -60,6 +61,7 @@ async def verify_firebase_token(
         token = credentials.credentials
         try:
             decoded_token = auth.verify_id_token(token)
+            request.state.user_id = decoded_token.get("uid")
             return decoded_token
         except auth.ExpiredIdTokenError:
             raise HTTPException(
@@ -81,6 +83,7 @@ async def verify_firebase_token(
     # 2. Dev Bypass (only when no real Firebase token is provided)
     if settings.app_env == "development" and x_test_bypass_token:
         if x_test_bypass_token == settings.dev_bypass_secret:
+            request.state.user_id = "test-user-123"
             return {
                 "uid": "test-user-123",
                 "email": "qa@watchout.app",
