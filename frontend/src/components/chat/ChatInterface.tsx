@@ -9,6 +9,7 @@ import rehypeSanitize from 'rehype-sanitize';
 import { useChatStore, ChatMessage } from '@/lib/store';
 import { streamRequest, StreamEvent, api, ApiError, analyzeScreenshot } from '@/lib/api';
 import { RestaurantCard, AttractionCard, Restaurant } from './ChatMessageComponents';
+import { DestinationSuggestionCards, DestinationSuggestion } from './DestinationSuggestionCards';
 import { toast } from 'sonner';
 
 /**
@@ -106,6 +107,7 @@ export function ChatInterface({ tripId }: ChatInterfaceProps) {
     const [currentStreamData, setCurrentStreamData] = useState<{
         restaurants?: Restaurant[];
         itinerary?: any;
+        destination_suggestions?: DestinationSuggestion[];
     }>({});
 
     useEffect(() => {
@@ -250,6 +252,13 @@ export function ChatInterface({ tripId }: ChatInterfaceProps) {
                                 setCurrentStreamData(prev => ({
                                     ...prev,
                                     restaurants: event.data as Restaurant[]
+                                }));
+                            }
+                            if (event.data_type === 'destination_suggestions' && Array.isArray(event.data)) {
+                                updateLastMessageData({ destination_suggestions: event.data });
+                                setCurrentStreamData(prev => ({
+                                    ...prev,
+                                    destination_suggestions: event.data as DestinationSuggestion[]
                                 }));
                             }
                             break;
@@ -421,7 +430,13 @@ export function ChatInterface({ tripId }: ChatInterfaceProps) {
                 )}
                 {messages.map((message, idx) => (
                     <div key={message.id}>
-                        <MessageBubble message={message} />
+                        <MessageBubble message={message} onPickDestination={(city) => {
+                            setInput(city);
+                            setTimeout(() => {
+                                const syntheticEvent = { preventDefault: () => { } } as React.FormEvent;
+                                handleSubmit(syntheticEvent);
+                            }, 10);
+                        }} />
                     </div>
                 ))}
 
@@ -488,7 +503,7 @@ export function ChatInterface({ tripId }: ChatInterfaceProps) {
     );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({ message, onPickDestination }: { message: ChatMessage; onPickDestination?: (city: string) => void }) {
     const isUser = message.role === 'user';
     const hasContent = message.content && message.content.trim().length > 0;
     const hasData = !!message.data;
@@ -525,6 +540,13 @@ function MessageBubble({ message }: { message: ChatMessage }) {
                                 <RestaurantCard key={`saved-${message.id}-${i}`} restaurant={r} />
                             ))}
                         </div>
+                    )}
+                    {/* Destination suggestion cards */}
+                    {!isUser && message.data && (message.data as any).destination_suggestions && (
+                        <DestinationSuggestionCards
+                            suggestions={(message.data as any).destination_suggestions as DestinationSuggestion[]}
+                            onPick={(city) => onPickDestination?.(city)}
+                        />
                     )}
                 </div>
                 {/* FE4: AI disclaimer — surfaced beneath every assistant reply */}
