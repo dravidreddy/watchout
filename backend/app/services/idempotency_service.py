@@ -79,6 +79,20 @@ class IdempotencyService:
             return None
         except DuplicateKeyError:
             existing = await collection.find_one({"idempotency_key": idempotency_key})
+            if existing and existing.get("status") == "failed":
+                # Allow retry by resetting the record
+                await collection.update_one(
+                    {"idempotency_key": idempotency_key},
+                    {
+                        "$set": {
+                            "status": "pending",
+                            "response": None,
+                            "created_at": now,
+                            "expires_at": now + timedelta(hours=cls.TTL_HOURS)
+                        }
+                    }
+                )
+                return None
             return existing.get("response") if existing else None
 
     

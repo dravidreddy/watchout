@@ -91,7 +91,8 @@ async def create_order(
         data = {
             "amount": amount_paise,
             "currency": currency,
-            "receipt": f"receipt_{user_id}_{int(datetime.now(timezone.utc).timestamp())}",
+            # Razorpay enforces a strict 40-character limit on the receipt flag.
+            "receipt": f"rcpt_{user_id[:8]}_{int(datetime.now(timezone.utc).timestamp())}",
             "notes": {
                 "user_id": user_id,
                 "tier": tier
@@ -117,17 +118,30 @@ async def create_order(
         logger.info(f"Created new order: {order['id']} with idempotency key: {idempotency_key}")
         return response_data
         
+    except razorpay.errors.BadRequestError as e:
+        logger.warning(f"Razorpay Bad Request during order creation: {str(e)}")
+        error_detail = str(e)
+        
+        db = MongoDB.get_db()
+        await db[IdempotencyService.COLLECTION_NAME].delete_one({"idempotency_key": idempotency_key})
+        
+        raise HTTPException(status_code=400, detail=error_detail)
+    except razorpay.errors.ServerError as e:
+        logger.error(f"Razorpay Server Error during order creation: {str(e)}")
+        error_detail = "Payment gateway is currently experiencing issues. Please try again."
+        
+        db = MongoDB.get_db()
+        await db[IdempotencyService.COLLECTION_NAME].delete_one({"idempotency_key": idempotency_key})
+        
+        raise HTTPException(status_code=502, detail=error_detail)
     except Exception as e:
         logger.error(f"Order creation failed: {str(e)}")
         
-        # Store failure response - use 'message' key for consistency with app exception handlers
+        # Instead of storing the failure, explicitly delete the key so the user can immediately retry
         error_detail = f"Order creation failed: {str(e)}"
-        error_response = {"message": error_detail}
-        await IdempotencyService.store_response(
-            idempotency_key=idempotency_key,
-            response_data=error_response,
-            status="failed"
-        )
+        
+        db = MongoDB.get_db()
+        await db[IdempotencyService.COLLECTION_NAME].delete_one({"idempotency_key": idempotency_key})
         
         raise HTTPException(status_code=500, detail=error_detail)
 
@@ -181,8 +195,11 @@ async def verify_payment(
     if not skip_signature_check:
         try:
             get_razorpay_client().utility.verify_payment_signature(params_dict)
-        except Exception:
-            logger.warning(f"Signature verification failed for order {razorpay_order_id}")
+        except razorpay.errors.SignatureVerificationError as e:
+            logger.warning(f"Signature verification failed for order {razorpay_order_id}: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Invalid payment signature. Check your test/live keys. Error: {str(e)}")
+        except Exception as e:
+            logger.warning(f"Signature verification failed for order {razorpay_order_id}: {str(e)}")
             raise HTTPException(status_code=400, detail="Invalid payment signature")
 
     try:
@@ -275,6 +292,12 @@ async def verify_payment(
         
     except HTTPException:
         raise
+    except razorpay.errors.BadRequestError as e:
+        logger.warning(f"Razorpay Bad Request: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except razorpay.errors.ServerError as e:
+        logger.error(f"Razorpay Server Error: {str(e)}")
+        raise HTTPException(status_code=502, detail="Payment gateway is currently experiencing issues. Please try again.")
     except Exception as e:
         logger.error(f"Payment verification failed: {str(e)}")
         raise HTTPException(status_code=500, detail="Payment verification failed due to a server error")

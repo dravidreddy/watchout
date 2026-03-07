@@ -64,9 +64,9 @@ export const openCheckout = async (options: CheckoutOptions) => {
                             recoverable: false,
                         });
                     }
-                } catch (e) {
+                } catch (e: any) {
                     options.onError({
-                        message: 'We could not verify your payment right now. If you were charged, your subscription will be activated automatically within a few minutes.',
+                        message: e.friendlyMessage || e.message || 'We could not verify your payment right now. If you were charged, your subscription will be activated automatically within a few minutes.',
                         code: 'VERIFICATION_FAILED',
                         recoverable: false,
                     });
