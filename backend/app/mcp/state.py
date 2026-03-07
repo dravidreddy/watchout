@@ -63,12 +63,17 @@ class CitySegment:
 # Core state machine
 # ---------------------------------------------------------------------------
 
+# Core fields — must be known before itinerary generation
 REQUIRED_FIELDS = [
     "destinations",
     "duration_days",
     "num_travelers",
     "budget_range",
     "travel_vibe",
+]
+
+# Optional enrichment fields — inferred from vibe/style, never explicitly asked
+OPTIONAL_FIELDS = [
     "origin_city",
     "pace",
     "travel_style",
@@ -78,7 +83,15 @@ REQUIRED_FIELDS = [
 ]
 
 # Fields we can infer — never ask for these if inference is possible
-INFERABLE_FIELDS = {"travel_vibe", "pace"}
+INFERABLE_FIELDS = {"travel_vibe", "pace", "travel_style", "spontaneity", "trip_motivation"}
+
+# Phase names for the 5-step onboarding funnel
+ONBOARDING_PHASES = [
+    "phase_1_intake",            # First message: bundle destination+duration+group
+    "phase_2_suggestions",       # Destination unknown: show 3 destination cards
+    "phase_3_destination_picked",# Destination known: ask vibe+budget in one shot
+    "phase_4_ready",             # All 5 fields known → is_complete = True
+]
 
 # Mood pill → travel vibe mapping
 MOOD_TO_VIBE: Dict[str, List[str]] = {

@@ -216,72 +216,158 @@ def build_clarification_extraction_prompt(
     prioritized_missing: List[str],
     surprise_section: str,
     multi_city_section: str,
+    onboarding_phase: str = "phase_1_intake",
 ) -> str:
+    """
+    Phase-aware clarification prompt.
+
+    Phase 1 → Bundle destination + duration + group into ONE message
+    Phase 2 → Show 3 destination suggestion cards (emoji + pitch)
+    Phase 3 → Bundle vibe + budget into ONE message
+    Phase 4 → Never reached (handled deterministically)
+    """
+
+    # -----------------------------------------------------------------------
+    # Phase-specific instruction block
+    # -----------------------------------------------------------------------
+    if onboarding_phase == "phase_1_intake":
+        phase_instructions = """
+<phase_1_intake>
+GOAL: Gather destination + duration + group size in ONE conversational message.
+
+Rules:
+- Ask all three topics but phrase them as a single natural question or two linked ones.
+- Give emoji quick-tap options for EACH sub-question on separate lines.
+- Do NOT send three separate questions. Bundle them.
+- Do NOT end with "Once I know this, I'll build the perfect itinerary for you." — vary your closing or omit it.
+
+Example structure:
+  "Hey! Quick questions to get your trip started 🗺️
+  Where are you thinking, and how long?"
+  📍 I have a destination in mind
+  🌏 Surprise me with suggestions
+  🏙️ Multi-city adventure
+
+  "And who's joining you?"
+  🙋 Just me (solo)
+  👫 Couple getaway
+  👨‍👩‍👧 Family with kids
+  🎉 Friend group
+
+Set onboarding_phase = "phase_1_intake" in output.
+</phase_1_intake>
+"""
+    elif onboarding_phase == "phase_2_suggestions":
+        phase_instructions = """
+<phase_2_suggestions>
+GOAL: The user wants destination suggestions. Show exactly 3 curated destination cards.
+
+Rules:
+- Produce destination_suggestions[] with 3 entries. Each entry has: city, emoji, pitch (max 12 words), best_for.
+- Your assistant_message should tease the 3 destinations warmly and ask them to pick.
+- DO NOT list destinations inline in the text — the frontend renders the cards separately.
+- Tailor suggestions to what you know: vibe, budget, duration, travelers.
+- If you know nothing yet, default to: one beach, one hills/nature, one city/culture pick.
+
+Example assistant_message:
+  "Ooh, love that — let me pick 3 spots that I think you'll absolutely love! 🌟
+  Which of these vibes with you?"
+
+Then destination_suggestions:
+  [{"city": "Goa", "emoji": "🏖️", "pitch": "Beaches, nightlife, and the best sunsets", "best_for": "Chill + party"},
+   {"city": "Coorg", "emoji": "☕", "pitch": "Misty hills, coffee estates, and pure peace", "best_for": "Nature + relaxation"},
+   {"city": "Jaipur", "emoji": "🏰", "pitch": "Royal forts, vibrant bazaars, and great food", "best_for": "Culture + sightseeing"}]
+
+Set destinations = ["agent_surprise"] and onboarding_phase = "phase_2_suggestions" in output.
+</phase_2_suggestions>
+"""
+    elif onboarding_phase == "phase_3_personalization":
+        phase_instructions = """
+<phase_3_personalization>
+GOAL: Destination is known. Ask BOTH vibe and budget in ONE message.
+
+Rules:
+- Bundle travel vibe + budget into a single natural message.
+- Each option on its own line with emoji.
+- Do NOT ask about duration or group size again (already known).
+- After this, you should have everything needed (is_complete should be true next turn).
+
+Example:
+  "Love it — {destination} is a great call! Two quick things to nail the plan 🎯
+
+  What's the vibe you're after?"
+  🌊 Beach and chill
+  🏔️ Adventure and outdoors
+  🏛️ History and culture
+  🍜 Food and local life
+  🎆 Party and nightlife
+
+  "And budget-wise?"
+  💚 Budget-friendly (₹3-5k/day)
+  💛 Mid-range (₹7-12k/day)
+  💜 Splurge a little (₹15k+/day)
+
+Set onboarding_phase = "phase_3_personalization" in output.
+</phase_3_personalization>
+"""
+    else:
+        phase_instructions = ""
+
+    # -----------------------------------------------------------------------
+    # Core prompt composition
+    # -----------------------------------------------------------------------
     return _join(
         _section(
             "task",
-            """
-Extract and update traveler preferences from the full conversation.
-Ask only for critical unknowns.
-            """,
+            "Extract traveler preferences. Ask only what is still missing. "
+            "Feel like a friend planning a trip, not a form.",
         ),
         _section(
             "known_context",
             f"""
-Conversation:
+Conversation so far:
 {history_text}
 
-User message:
+Latest user message:
 {user_input}
 
-Current preferences:
+Current preferences (already known — NEVER ask again):
 {_dump_json(current_prefs)}
 
-Missing fields (priority order):
+Still missing (ask these):
 {_dump_json(prioritized_missing)}
+
+Current funnel phase: {onboarding_phase}
             """,
         ),
+        phase_instructions,
         surprise_section,
         multi_city_section,
         _section(
-            "decision_rules",
+            "universal_rules",
             """
-Infer when signals are strong (for example couple trip, budget sensitivity, relaxed pace).
-Do not ask for information already present in conversation history.
-Bundle related questions conversationally to avoid user fatigue (e.g., "What's the main motivation for this trip, and do you prefer a jam-packed schedule or something spontaneous?").
-If you ask a question, provide 2-4 concise, persona-driven options the user can pick from (e.g., "1. Jam-packed adventure, 2. Loose framework").
-Never ask the same field twice once it is already known.
-If enough data exists to proceed, mark is_complete=true.
-Keep the conversation engaging and natural, treating the user like a friend planning a trip.
-Normalization rule (Bug 6 fix): if the user says any of "fine", "no preference", "anything goes",
-"doesn't matter", "fine with anything", "no requirements", "nothing special", "all good",
-treat the field as answered and set it to "none" in the preferences output. Do not ask again.
+- Never ask a question the user has already answered (check conversation history above).
+- Never send two separate messages where one is possible.
+- Infer where the signal is clear: solo trip → num_travelers=1, "beach vibe" → travel_vibe=["beach", "relaxation"].
+- Accept casual answers: "3 days", "just me", "budget trip", "beach stuff" — extract the intent.
+- If the user says "fine", "no preference", "anything goes", "doesn't matter" →
+  treat the field as satisfied; set it to "none". Don't ask again.
+- Mark is_complete=true only when destinations + duration_days + num_travelers + budget_range + travel_vibe are all known.
             """,
         ),
         _section(
-            "output_required",
+            "message_format",
             """
-Return keys: assistant_message, preferences, missing_fields, is_complete.
-assistant_message TONE CONTRACT — critical:
-- You are a warm, enthusiastic travel bestie. NOT a data entry form.
-- Match the user's vibe. If they're excited, be excited. If they're relaxed, be chill.
-- Use light, tasteful emojis (✈️ 🌊 🏔️ 🌅 🍜 etc.) to add warmth.
-- Use friendly, conversational language — "Ooh great choice!", "Love that!", "Sounds like a vibe!"
-- Ask questions naturally the way a friend would, not like a form field.
-assistant_message FORMAT — MANDATORY:
-  Line 1: One warm, personalized acknowledgement sentence (max 12 words).
-  Line 2: One clear, natural question sentence ending with "?"
-  Line 3: (blank line)
-  Lines 4+: Each option on its OWN LINE, starting with a persona emoji then the option text.
-             Format: <emoji> <Option text>
-             Example:
-               🌴 Relaxation and recharge
-               🧗 Adventure and thrill
-               ❤️ Quality time with loved ones
-  Last line: (blank line), then one short, uplifting closing sentence (e.g. "Once I know this, I'll build the perfect itinerary for you.").
-- NEVER put options inline in a sentence.
-- NEVER use numbered lists like "1. Option, 2. Option".
-- Keep total length under 120 words.
+assistant_message rules:
+- Warm, enthusiastic, conversational. You are a travel bestie, not a bot.
+- Line 1: One short warm acknowledgement of what they said (max 10 words).
+- Line 2: Your question(s) — natural, friend-like phrasing.
+- Blank line.
+- Options: each on its own line, emoji first. NO numbered lists. NO inline options.
+  Format: <emoji> <Option text>
+- Do NOT end every message with "Once I know this, I'll build the perfect itinerary for you."
+  Vary your tone. Sometimes just ask the next question warmly.
+- Total length: under 100 words.
             """,
         ),
     )

@@ -46,18 +46,13 @@ ALLOWED_AGENTS = {
     "weather",
 }
 
+# 5 core fields — only these block itinerary generation
 CRITICAL_FIELDS = [
-    "origin_city",
-    "destinations",  # Bug 3 fix: was destinations_or_region, but clarification writes destinations
+    "destinations",
     "duration_days",
     "num_travelers",
     "budget_range",
-    "pace",
     "travel_vibe",
-    "travel_style",
-    "trip_motivation",
-    "spontaneity",
-    "special_requirements",
 ]
 
 
@@ -395,6 +390,8 @@ class SupervisorAgent(BaseAgent):
                 new_preferences = result.get("preferences") or result.get("extracted_preferences") or {}
                 is_complete = bool(result.get("is_complete", False))
                 new_missing = result.get("missing_fields", [])
+                onboarding_phase = result.get("onboarding_phase", "phase_1_intake")
+                destination_suggestions = result.get("destination_suggestions") or []
 
                 # Update merged preferences
                 merged_preferences = {**preferences, **(new_preferences or {})}
@@ -416,6 +413,19 @@ class SupervisorAgent(BaseAgent):
                     "type": "data",
                     "data_type": "missing_fields",
                     "data": new_missing,
+                }
+                # Emit destination suggestions as a separate data event (for card rendering)
+                if destination_suggestions:
+                    yield {
+                        "type": "data",
+                        "data_type": "destination_suggestions",
+                        "data": destination_suggestions,
+                    }
+                # Emit onboarding phase so frontend can track funnel progress
+                yield {
+                    "type": "data",
+                    "data_type": "onboarding_phase",
+                    "data": {"phase": onboarding_phase},
                 }
 
                 # Phase 4: When all requirements are complete, emit a confirmation
@@ -807,22 +817,15 @@ class SupervisorAgent(BaseAgent):
             }
 
     def _compute_missing_fields(self, preferences: Dict[str, Any]) -> List[str]:
+        """Check only the 5 core fields that block itinerary generation."""
         missing = []
         for f in CRITICAL_FIELDS:
             val = preferences.get(f)
-            # Bug 3 fix: destinations is now the standard key, no alias needed.
-            # If user said "surprise me", destinations = ["agent_surprise"] — treat as satisfied
             if f == "destinations":
                 if isinstance(val, list) and "agent_surprise" in val:
                     continue
                 if preferences.get("destination_open"):
                     continue
-            # special_requirements: any non-empty value (including "none") is satisfied
-            if f == "special_requirements":
-                if val is not None and val != "":
-                    continue
-                missing.append(f)
-                continue
             if not val:
                 missing.append(f)
         return missing
