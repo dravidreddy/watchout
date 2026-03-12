@@ -99,3 +99,15 @@ presentation_content.md
 pyrightconfig.json
 backend/debug_db.py
 
+# Dev-only test page (map component testing)
+frontend/src/app/test-map/
+
+# Temp / scratch files
+git_log.txt
+temp_git_log.txt
+application-audit-report.md
+frontend/error_setup.txt
+frontend/*_err*.txt
+frontend/chat_error.txt
+frontend/error_log.txt
+

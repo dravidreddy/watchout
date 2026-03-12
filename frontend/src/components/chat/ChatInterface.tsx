@@ -458,6 +458,7 @@ export function ChatInterface({ tripId }: ChatInterfaceProps) {
                         onChange={(e) => setInput(e.target.value)}
                         placeholder="Type your travel dreams..."
                         aria-label="Type your travel message"
+                        data-testid="chat-input"
                         disabled={isStreaming}
                         className="flex-1 px-5 py-3.5 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-purple-500/50 focus:bg-white/10 transition-all font-light"
                     />
@@ -492,6 +493,7 @@ export function ChatInterface({ tripId }: ChatInterfaceProps) {
                             type="submit"
                             disabled={!input.trim()}
                             aria-label="Send message"
+                            data-testid="send-button"
                             className="px-5 py-3.5 bg-white text-slate-900 rounded-2xl font-medium hover:bg-purple-50 hover:scale-105 disabled:opacity-50 disabled:scale-100 disabled:hover:bg-white transition-all duration-200"
                         >
                             <Send className="w-5 h-5" aria-hidden="true" />
@@ -521,6 +523,7 @@ function MessageBubble({ message, onPickDestination }: { message: ChatMessage; o
 
             <div className="flex flex-col gap-1 max-w-[85%] sm:max-w-[75%]">
                 <div
+                    data-testid="chat-message-bubble"
                     className={`px-5 py-3.5 rounded-2xl shadow-sm flex flex-col gap-3 ${isUser
                         ? 'bg-white text-slate-900 rounded-tr-sm'
                         : 'bg-white/5 border border-white/5 text-slate-200 rounded-tl-sm backdrop-blur-sm'

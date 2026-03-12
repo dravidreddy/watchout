@@ -186,3 +186,46 @@ You use Mapbox for accurate routing in India, considering:
             response += f"• From **{leg.get('from')}** to **{leg.get('to')}**: ~{leg_time_str} ({leg.get('distance_km')} km)\n"
             
         return response
+
+    async def discover_route_pitstops(
+        self,
+        origin_city: str,
+        destination_city: str,
+        country: str = "IN"
+    ) -> List[Dict[str, Any]]:
+        """
+        Discover potential cities/pitstops between origin and destination.
+        """
+        # Geocode origin and destination
+        origin_res = await self.mapbox.geocode(origin_city, types="place", country=country)
+        dest_res = await self.mapbox.geocode(destination_city, types="place", country=country)
+        
+        if not origin_res or not dest_res:
+            return []
+            
+        org = origin_res[0]
+        dst = dest_res[0]
+        
+        # Calculate bounding box
+        min_lon = min(org["longitude"], dst["longitude"])
+        max_lon = max(org["longitude"], dst["longitude"])
+        min_lat = min(org["latitude"], dst["latitude"])
+        max_lat = max(org["latitude"], dst["latitude"])
+        
+        # Add a little padding (e.g., 0.5 degrees ~ 50km)
+        padding = 0.5
+        bbox = (min_lon - padding, min_lat - padding, max_lon + padding, max_lat + padding)
+        
+        cities = await self.mapbox.get_cities_in_bbox(bbox, country=country, limit=10)
+        
+        # Filter out origin and destination
+        origin_name = org.get("name", "").lower()
+        dest_name = dst.get("name", "").lower()
+        
+        valid_stops = []
+        for city in cities:
+            c_name = city.get("name", "").lower()
+            if c_name and c_name not in origin_name and c_name not in dest_name:
+                valid_stops.append(city)
+                
+        return valid_stops

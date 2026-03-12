@@ -7,13 +7,12 @@
 import { useState, useEffect } from 'react';
 
 export default function ConnectionStatus() {
-    const [isOnline, setIsOnline] = useState(true);
+    const [isOnline, setIsOnline] = useState(
+        typeof navigator !== 'undefined' ? navigator.onLine : true
+    );
     const [showNotification, setShowNotification] = useState(false);
 
     useEffect(() => {
-        // Check initial status
-        setIsOnline(navigator.onLine);
-
         const handleOnline = () => {
             setIsOnline(true);
             setShowNotification(true);

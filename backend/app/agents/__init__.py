@@ -20,5 +20,5 @@ __all__ = [
     "StayAgent",
     "FoodAgent",
     "WeatherAgent",
-    "SupervisorAgent"
+    "SupervisorAgent",
 ]

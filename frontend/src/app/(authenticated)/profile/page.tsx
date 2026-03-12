@@ -9,15 +9,12 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useTheme } from 'next-themes';
+import { TRAVEL_STYLES, BUDGET_RANGES, LANGUAGES } from '@/lib/constants';
 
-// Travel style options
-const travelStyles = ['Adventure', 'Relaxation', 'Cultural', 'Family', 'Budget', 'Luxury'];
-
-// Budget ranges
-const budgetRanges = ['Budget', 'Mid-range', 'Luxury'];
-
-// Languages
-const languages = ['English', 'Hindi', 'Spanish', 'French', 'German'];
+// Use shared constants
+const travelStyles = [...TRAVEL_STYLES];
+const budgetRanges = [...BUDGET_RANGES];
+const languages = [...LANGUAGES];
 
 export default function ProfilePage() {
     const { user, setUser, logout, isLoading } = useAuth();
@@ -86,7 +83,6 @@ export default function ProfilePage() {
         { icon: MapPin, label: 'Home City', value: user?.home_city || 'Not set', href: '#' },
         { icon: Bell, label: 'Notifications', value: 'Enabled', href: '#' },
         { icon: Palette, label: 'Theme', value: theme ? theme.charAt(0).toUpperCase() + theme.slice(1) : 'System', href: '#' },
-        { icon: Shield, label: 'Privacy', value: '', href: '#' },
     ];
 
     const handleLogout = async () => {
@@ -140,6 +136,20 @@ export default function ProfilePage() {
                                     {user?.name?.[0] || user?.email?.[0] || '?'}
                                 </div>
                             )}
+                            <label
+                                htmlFor="photo-upload"
+                                className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full flex items-center justify-center cursor-pointer shadow-md"
+                                style={{ background: 'var(--accent)' }}
+                            >
+                                <Camera className="w-4 h-4 text-white" />
+                            </label>
+                            <input id="photo-upload" type="file" accept="image/*" className="hidden"
+                                onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file || !user) return;
+                                    toast.info('Photo upload coming soon!');
+                                }}
+                            />
                         </div>
                         <div className="flex-1">
                             <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -280,6 +290,24 @@ export default function ProfilePage() {
                             </button>
                         ))}
                     </div>
+                    {/* Privacy link */}
+                    <Link href="/privacy">
+                        <div
+                            className="w-full p-4 flex items-center justify-between transition-colors hover:bg-black/[0.02]"
+                            style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}
+                        >
+                            <div className="flex items-center gap-3">
+                                <div
+                                    className="w-9 h-9 rounded-xl flex items-center justify-center"
+                                    style={{ background: 'var(--accent-50)' }}
+                                >
+                                    <Shield className="w-5 h-5" style={{ color: 'var(--accent)' }} />
+                                </div>
+                                <span style={{ color: 'var(--text-primary)' }}>Privacy Policy</span>
+                            </div>
+                            <ChevronRight className="w-5 h-5" style={{ color: 'var(--text-tertiary)' }} />
+                        </div>
+                    </Link>
                 </section>
 
                 {/* Subscription */}
@@ -296,8 +324,16 @@ export default function ProfilePage() {
                         >
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <h4 className="font-semibold text-white mb-1">Upgrade to Premium</h4>
-                                    <p className="text-white/80 text-sm">Unlimited trips, offline access & more</p>
+                                    <h4 className="font-semibold text-white mb-1">
+                                        {user?.subscription_tier === 'free' || !user?.subscription_tier
+                                            ? 'Upgrade to Premium'
+                                            : `You're on ${user.subscription_tier.charAt(0).toUpperCase() + user.subscription_tier.slice(1)}`}
+                                    </h4>
+                                    <p className="text-white/80 text-sm">
+                                        {user?.subscription_tier === 'free' || !user?.subscription_tier
+                                            ? 'Unlimited trips, offline access & more'
+                                            : 'View plan details and manage your subscription'}
+                                    </p>
                                 </div>
                                 <ChevronRight className="w-6 h-6 text-white" />
                             </div>
@@ -334,7 +370,8 @@ export default function ProfilePage() {
                         className="animate-page-mount fixed inset-0 bg-black/40 z-[100] backdrop-blur-sm"
                     />
                     <div
-                        className="animate-page-mount fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-white z-[101] rounded-2xl shadow-2xl p-6"
+                        className="animate-page-mount fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm z-[101] rounded-2xl shadow-2xl p-6"
+                        style={{ background: 'var(--bg-primary)' }}
                     >
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="text-lg font-bold">Update Home City</h3>
@@ -474,11 +511,38 @@ export default function ProfilePage() {
                         </div>
 
                         <button
-                            onClick={() => {
-                                toast.success('Notification preferences saved');
+                            onClick={async () => {
+                                if (user) {
+                                    try {
+                                        setIsSaving(true);
+                                        await api.updateProfile({
+                                            preferences: {
+                                                ...user.preferences,
+                                                notifications_email: notifications.email,
+                                                notifications_push: notifications.push,
+                                                notifications_trip_updates: notifications.tripUpdates
+                                            }
+                                        });
+                                        setUser({
+                                            ...user,
+                                            preferences: {
+                                                ...user.preferences,
+                                                notifications_email: notifications.email,
+                                                notifications_push: notifications.push,
+                                                notifications_trip_updates: notifications.tripUpdates
+                                            }
+                                        });
+                                        toast.success('Notification preferences saved');
+                                    } catch (error) {
+                                        toast.error('Failed to save notification preferences');
+                                    } finally {
+                                        setIsSaving(false);
+                                    }
+                                }
                                 setIsNotificationsModalOpen(false);
                             }}
-                            className="w-full mt-8 py-3 rounded-xl text-sm font-medium text-white bg-accent hover:opacity-90 transition-all shadow-lg shadow-accent/20"
+                            disabled={isSaving}
+                            className="w-full mt-8 py-3 rounded-xl text-sm font-medium text-white bg-accent hover:opacity-90 transition-all shadow-lg shadow-accent/20 disabled:opacity-50"
                         >
                             Done
                         </button>

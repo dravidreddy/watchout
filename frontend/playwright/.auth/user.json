@@ -1,0 +1,22 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:3000",
+      "localStorage": [
+        {
+          "name": "sidebar-width",
+          "value": "256"
+        },
+        {
+          "name": "onboarding_dismissed",
+          "value": "true"
+        },
+        {
+          "name": "auth-storage",
+          "value": "{\"state\":{\"user\":{\"uid\":\"e2e-test-user-id\",\"email\":\"e2e@watchout.app\",\"displayName\":\"E2E Tester\",\"photoURL\":null,\"home_city\":\"New York\",\"onboarding_completed\":true,\"preferences\":{\"travel_style\":\"balanced\",\"travel_vibe\":[\"adventure\"],\"budget_range\":\"mid-range\",\"language\":\"English\"}},\"isAuthenticated\":true},\"version\":0}"
+        }
+      ]
+    }
+  ]
+}

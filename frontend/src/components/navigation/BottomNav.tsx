@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Home, Briefcase, Compass, User, Plus, MessageSquarePlus } from 'lucide-react';
-import { useState, useEffect } from 'react';
 
 const tabs = [
     { name: 'Home', href: '/home', icon: Home },
@@ -15,23 +14,15 @@ const tabs = [
 
 export function BottomNav() {
     const pathname = usePathname();
-    const [indicatorLeft, setIndicatorLeft] = useState(0);
 
     // Pages where we show the floating New Trip button
     const showNewTripButton = pathname === '/home' || pathname === '/trips';
 
-    // Calculate active tab indicator position
-    useEffect(() => {
-        const activeIndex = tabs.findIndex(tab =>
-            pathname === tab.href || pathname.startsWith(tab.href + '/')
-        );
-        if (activeIndex !== -1) {
-            // Dynamic tab width based on number of tabs
-            const tabWidth = 100 / tabs.length; // percentage
-            const indicatorWidth = 3; // rem, converted to percentage later
-            setIndicatorLeft(activeIndex * tabWidth + (tabWidth / 2));
-        }
-    }, [pathname]);
+    const activeIndex = tabs.findIndex(tab =>
+        pathname === tab.href || pathname.startsWith(tab.href + '/')
+    );
+    const tabWidth = 100 / tabs.length;
+    const indicatorLeft = activeIndex !== -1 ? (activeIndex * tabWidth + (tabWidth / 2)) : 0;
 
     return (
         <>

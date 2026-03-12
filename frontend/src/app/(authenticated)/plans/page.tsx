@@ -80,6 +80,13 @@ export default function PlansPage() {
         if (!plan) return;
 
         if (planId === 'free') {
+            // Guard against accidental downgrade from a paid tier
+            if (user.subscription_tier && user.subscription_tier !== 'free') {
+                const confirmed = window.confirm(
+                    'Downgrading to Explorer will remove your premium features. Are you sure?'
+                );
+                if (!confirmed) return;
+            }
             setUpdatingPlan(planId);
             try {
                 await api.updateProfile({ subscription_tier: planId });
@@ -234,10 +241,9 @@ export default function PlansPage() {
                     <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
                         ✓ Cancel anytime &nbsp;•&nbsp; ✓ 7-day free trial &nbsp;•&nbsp; ✓ Secure payment
                     </p>
-                    <div className="flex justify-center gap-4 mt-4">
-                        <img src="/visa.svg" alt="Visa" className="h-6 opacity-50" />
-                        <img src="/mastercard.svg" alt="Mastercard" className="h-6 opacity-50" />
-                    </div>
+                    <p className="text-xs mt-3 font-medium opacity-50" style={{ color: 'var(--text-secondary)' }}>
+                        Visa • Mastercard • UPI • NetBanking
+                    </p>
                 </div>
             </div>
         </div>

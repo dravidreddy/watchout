@@ -48,7 +48,13 @@ Output structured itineraries with specific times and durations.""",
         weather_data = context.get("weather_data", {})
         timezone_id = context.get("timezone_id", "UTC")
         
-        prompt = self._build_itinerary_prompt(preferences, places_data, weather_data, timezone_id)
+        macro_journey = await self._generate_macro_journey(preferences)
+        macro_journey_context = ""
+        if macro_journey:
+            import json
+            macro_journey_context = json.dumps(macro_journey)
+            
+        prompt = self._build_itinerary_prompt(preferences, places_data, weather_data, timezone_id, macro_journey_context)
         
         schema = {
             "type": "object",
@@ -74,6 +80,8 @@ Output structured itineraries with specific times and durations.""",
                                         "duration_minutes": {"type": "integer"},
                                         "category": {"type": "string"},
                                         "estimated_cost": {"type": "integer"},
+                                        "latitude": {"type": "number"},
+                                        "longitude": {"type": "number"},
                                         "tips": {"type": "string"}
                                     }
                                 }
@@ -104,7 +112,7 @@ Output structured itineraries with specific times and durations.""",
             
             if result:
                 # Convert to our model format (if needed for Pydantic/DB)
-                itinerary_obj = self._convert_to_itinerary(result)
+                itinerary_obj = self._convert_to_itinerary(result, macro_journey)
                 
                 return {
                     "response": self._generate_summary(result),
@@ -133,7 +141,8 @@ Output structured itineraries with specific times and durations.""",
         preferences: Dict[str, Any],
         places_data: Dict[str, Any],
         weather_data: Dict[str, Any],
-        timezone_id: str = "UTC"
+        timezone_id: str = "UTC",
+        macro_journey_context: str = ""
     ) -> str:
         """Build the itinerary generation prompt."""
         destinations = preferences.get("destinations", [])
@@ -215,10 +224,77 @@ Output structured itineraries with specific times and durations.""",
             transport_preference=transport_preference,
             # Bug 5 addition:
             group_accommodation_hint=group_accommodation_hint,
+            # Features addition: optionally include a high level macro journey plan
+            macro_journey_context=macro_journey_context,
         )
 
+    async def _generate_macro_journey(self, preferences: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        origin_city = preferences.get("origin_city")
+        destinations = preferences.get("destinations", [])
+        destination_city = destinations[0] if destinations else None
+        days = preferences.get("duration_days", 3)
+        vibe = preferences.get("travel_vibe", [])
+        vibe_str = ", ".join(vibe) if isinstance(vibe, list) else str(vibe) if vibe else "leisure"
+        pace = preferences.get("pace", "moderate")
+        
+        if not origin_city or not destination_city or origin_city.lower().strip() == destination_city.lower().strip():
+            return None
+            
+        road_trip_pref = preferences.get("road_trip_preference", "").lower()
+        if "direct" in road_trip_pref:
+            return None
+            
+        # Ensure we only do this for driving/flexible trips where road trips make sense
+        transport_preference = (
+            preferences.get("transport")
+            or preferences.get("transport_preference")
+            or preferences.get("travel_style", "flexible")
+        ).lower()
+        
+        if "flight" in transport_preference or "train" in transport_preference:
+            return None
+            
+        from app.agents.route import RouteAgent
+        route_agent = RouteAgent()
+        
+        try:
+            pitstops = await route_agent.discover_route_pitstops(origin_city, destination_city)
+        except Exception:
+            pitstops = []
+            
+        from app.prompts import build_macro_journey_prompt
+        prompt = build_macro_journey_prompt(
+            origin_city=origin_city,
+            destination_city=destination_city,
+            days=days,
+            vibe_str=vibe_str,
+            pace=pace,
+            potential_pitstops=pitstops
+        )
+        
+        schema = {
+            "type": "object",
+            "properties": {
+                "origin": {"type": "string"},
+                "destination": {"type": "string"},
+                "stops": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "city_name": {"type": "string"},
+                            "nights": {"type": "integer"},
+                            "reason": {"type": "string"}
+                        }
+                    }
+                }
+            }
+        }
+        
+        journey = await self.generate_structured(prompt, schema)
+        return journey
     
-    def _convert_to_itinerary(self, raw_plan: Dict[str, Any]) -> Itinerary:
+    def _convert_to_itinerary(self, raw_plan: Dict[str, Any], macro_journey: Optional[Dict[str, Any]] = None) -> Itinerary:
         """Convert the raw plan to our Itinerary model."""
         days = []
         
@@ -232,7 +308,9 @@ Output structured itineraries with specific times and durations.""",
                     arrival_time=activity.get("time"),
                     duration_minutes=activity.get("duration_minutes", 60),
                     category=activity.get("category"),
-                    estimated_cost=activity.get("estimated_cost")
+                    estimated_cost=activity.get("estimated_cost"),
+                    latitude=activity.get("latitude"),
+                    longitude=activity.get("longitude")
                 ))
             
             day_plan = DayPlan(
@@ -242,15 +320,33 @@ Output structured itineraries with specific times and durations.""",
                 notes=day_data.get("notes")
             )
             days.append(day_plan)
+            
+        journey_route_obj = None
+        if macro_journey:
+            from app.models.trip import JourneyRoute, JourneyStop
+            stops = macro_journey.get("stops", [])
+            journey_stops = []
+            for s in stops:
+                journey_stops.append(JourneyStop(
+                    city_name=s.get("city_name", ""),
+                    nights=s.get("nights", 0),
+                    reason=s.get("reason")
+                ))
+            journey_route_obj = JourneyRoute(
+                origin=macro_journey.get("origin", ""),
+                destination=macro_journey.get("destination", ""),
+                stops=journey_stops
+            )
         
         return Itinerary(
+            journey_route=journey_route_obj,
             days=days,
             total_estimated_cost=raw_plan.get("total_estimated_budget"),
             highlights=raw_plan.get("highlights", [])
         )
     
     def _generate_summary(self, plan: Dict[str, Any]) -> str:
-        """Generate a beautiful, soothing, well-structured markdown summary of the trip plan."""
+        """Generate a beautiful, soothing, well-structured canonical markdown summary of the trip plan."""
         title = plan.get("title", "Your Trip")
         raw_days = plan.get("days", [])
         days = raw_days if isinstance(raw_days, list) else []
@@ -274,7 +370,7 @@ Output structured itineraries with specific times and durations.""",
 
         lines: List[str] = []
 
-        # Header block
+        # Canonical Header
         lines.append(f"# ✈️ {total_days}-Day {title}")
         if highlights:
             lines.append(f"> **Highlights:** {' · '.join(highlights[:4])}")
@@ -304,13 +400,12 @@ Output structured itineraries with specific times and durations.""",
                 desc = str(activity.get("description") or "").strip()
                 tip = str(activity.get("tips") or "").strip()
 
-                entry = f"{icon} **{name}**"
-                if time_text:
-                    entry += f" `{time_text}`"
+                # Enforce Canonical Markdown layout for each activity
+                entry = f"**{time_text}** | {icon} **{name}**" if time_text else f"{icon} **{name}**"
                 if desc:
-                    entry += f" — {desc[:90]}"
+                    entry += f"  \\n   *{desc[:120]}*"
                 if tip:
-                    entry += f" *(💡 {tip[:60]})*"
+                    entry += f"  \\n   💡 **Tip:** {tip[:80]}"
 
                 hour = None
                 if ":" in time_text:
@@ -333,33 +428,35 @@ Output structured itineraries with specific times and durations.""",
                 except Exception:
                     pass
 
-            city_str = f" · {city}" if city else ""
+            city_str = f" in {city}" if city else ""
             lines.append(f"## 📅 Day {day_number}{city_str} — *{day_label}*")
             lines.append("")
 
+            # Render enforced time blocks
             for period, bucket in [("Morning", morning), ("Afternoon", afternoon), ("Evening", evening)]:
                 if bucket:
-                    lines.append(f"**{TIME_ICONS[period.lower()]} {period}**")
+                    lines.append(f"### {TIME_ICONS[period.lower()]} {period}")
                     for item in bucket:
-                        lines.append(f"  - {item}")
+                        lines.append(f"- {item}")
                     lines.append("")
 
-            # Meals section
+            # Render Meals canonically
             meals = day.get("meals", [])
             if meals and isinstance(meals, list):
-                meal_parts = []
+                meal_lines = []
                 for m in meals:
                     if isinstance(m, dict):
                         mtype = m.get("type", "").capitalize()
                         sug = m.get("suggestion", "")
                         if mtype and sug:
-                            meal_parts.append(f"{mtype}: {sug}")
-                if meal_parts:
-                    lines.append(f"🍽️ **Meals:** {' · '.join(meal_parts)}")
+                            meal_lines.append(f"- **{mtype}**: {sug}")
+                if meal_lines:
+                    lines.append(f"### 🍽️ Meals")
+                    lines.extend(meal_lines)
                     lines.append("")
 
             if day_budget > 0:
-                lines.append(f"💰 **Day estimate:** ₹{max(day_budget, 0):,}")
+                lines.append(f"**💰 Day Estimate:** ₹{max(day_budget, 0):,}")
                 lines.append("")
 
             lines.append("---")
@@ -370,7 +467,7 @@ Output structured itineraries with specific times and durations.""",
             lines.append("")
         lines.append("*Need to tweak anything? Just say the word — we'll make it perfect for you!* 🎒✨")
 
-        return "\n".join(lines).strip()
+        return "\\n".join(lines).strip()
     
     async def regenerate_day(
         self,

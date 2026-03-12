@@ -19,8 +19,8 @@ const aiSuggestions = [
 ];
 
 const seasonalPicks = [
-    { id: '1', title: 'Monsoon Escapes', subtitle: 'Coorg, Munnar, Lonavala', image: 'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=600&h=400&fit=crop' },
-    { id: '2', title: 'Winter Road Trips', subtitle: 'Himachal, Uttarakhand', image: 'https://images.unsplash.com/photo-1491002052546-bf38f186af56?w=600&h=400&fit=crop' },
+    { id: '1', title: 'Monsoon Escapes', subtitle: 'Coorg, Munnar, Lonavala', image: 'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=600&h=400&fit=crop', href: '/chat?q=Best+monsoon+escapes+in+India' },
+    { id: '2', title: 'Winter Road Trips', subtitle: 'Himachal, Uttarakhand', image: 'https://images.unsplash.com/photo-1491002052546-bf38f186af56?w=600&h=400&fit=crop', href: '/chat?q=Best+winter+road+trips+in+India' },
 ];
 
 export default function HomePage() {
@@ -32,6 +32,7 @@ export default function HomePage() {
     const [nearby, setNearby] = useState<Destination[]>([]);
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [isLocationFallback, setIsLocationFallback] = useState(false);
     const [showOnboarding, setShowOnboarding] = useState(false);
 
     const handleSearch = (query: string) => {
@@ -133,6 +134,7 @@ export default function HomePage() {
                         const fallback = getFallbackLocation();
                         const nearbyData = await api.getNearbyDestinations(fallback.lat, fallback.lng);
                         setNearby(nearbyData);
+                        setIsLocationFallback(true);
                     };
 
                     try {
@@ -202,10 +204,11 @@ export default function HomePage() {
                         </span>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button className="p-2 rounded-lg hover:bg-black/5 transition-colors relative">
-                            <Bell className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
-                            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
-                        </button>
+                        <Link href="/trips">
+                            <button className="p-2 rounded-lg hover:bg-black/5 transition-colors">
+                                <Bell className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
+                            </button>
+                        </Link>
                         <Link href="/profile">
                             <div
                                 className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-medium"
@@ -243,8 +246,20 @@ export default function HomePage() {
                             onChange={(e) => setSearchQuery(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleSearch(searchQuery)}
                             className="input search-input py-4"
-                            style={{ paddingLeft: '2.75rem' }}
+                            style={{ paddingLeft: '2.75rem', paddingRight: searchQuery ? '2.5rem' : '1rem' }}
                         />
+                        {searchQuery && (
+                            <button
+                                onClick={() => setSearchQuery('')}
+                                className="absolute right-4 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-black/5 transition-colors"
+                                aria-label="Clear search"
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-tertiary)' }}>
+                                    <line x1="18" y1="6" x2="6" y2="18" />
+                                    <line x1="6" y1="6" x2="18" y2="18" />
+                                </svg>
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -289,7 +304,7 @@ export default function HomePage() {
                         <section className="mb-8">
                             <div className="flex items-center justify-between mb-4">
                                 <h2 className="text-heading" style={{ color: 'var(--text-primary)' }}>
-                                    Trending in India
+                                    Trending Destinations
                                 </h2>
                                 <Link
                                     href="/explore"
@@ -333,11 +348,13 @@ export default function HomePage() {
                                         key={pick.id}
                                         className="stagger-item"
                                     >
-                                        <SeasonalCard
-                                            title={pick.title}
-                                            subtitle={pick.subtitle}
-                                            image={pick.image}
-                                        />
+                                        <Link href={pick.href}>
+                                            <SeasonalCard
+                                                title={pick.title}
+                                                subtitle={pick.subtitle}
+                                                image={pick.image}
+                                            />
+                                        </Link>
                                     </div>
                                 ))}
                             </div>
@@ -348,8 +365,13 @@ export default function HomePage() {
                             <div className="flex items-center gap-2 mb-4">
                                 <MapPin className="w-5 h-5" style={{ color: 'var(--accent)' }} />
                                 <h2 className="text-heading" style={{ color: 'var(--text-primary)' }}>
-                                    Nearby Favorites
+                                    {isLocationFallback ? 'Popular Picks' : 'Nearby Favorites'}
                                 </h2>
+                                {isLocationFallback && (
+                                    <Link href="/profile" className="text-xs font-medium ml-auto" style={{ color: 'var(--accent)' }}>
+                                        Set home city →
+                                    </Link>
+                                )}
                             </div>
                             <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-2 -mx-4 px-4">
                                 {isLoading ? (
@@ -385,7 +407,7 @@ export default function HomePage() {
                                 One-click trip ideas just for you
                             </p>
                             <div className="space-y-3">
-                                {suggestions.map((suggestion, index) => (
+                                {(suggestions.length > 0 ? suggestions : aiSuggestions).map((suggestion, index) => (
                                     <Link href={`/chat?q=${encodeURIComponent(suggestion)}`} key={index}>
                                         <div
                                             className="p-3 rounded-xl cursor-pointer transition-all flex items-center justify-between group hover:translate-x-1"
@@ -401,11 +423,6 @@ export default function HomePage() {
                                         </div>
                                     </Link>
                                 ))}
-                                {suggestions.length === 0 && !isLoading && (
-                                    <p className="text-xs text-center text-gray-500 py-4 italic">
-                                        Planning your next adventure...
-                                    </p>
-                                )}
                             </div>
                         </div>
                     </div>

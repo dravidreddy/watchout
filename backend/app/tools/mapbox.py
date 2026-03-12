@@ -47,6 +47,17 @@ class MapboxTool:
         
         coords_str = ";".join([f"{lon},{lat}" for lon, lat in coords])
         
+        # Check cache
+        import hashlib
+        from datetime import datetime, timezone
+        from app.db.mongo import mapbox_cache_collection
+
+        route_key = hashlib.md5(f"get_directions:{coords_str}:{profile}".encode()).hexdigest()
+        cache = mapbox_cache_collection()
+        cached = await cache.find_one({"route_key": route_key})
+        if cached:
+            return cached.get("route_data")
+        
         params = {
             "access_token": self.access_token,
             "geometries": "geojson",
@@ -72,7 +83,7 @@ class MapboxTool:
             
             route = routes[0]
             
-            return {
+            route_data = {
                 "duration_seconds": route.get("duration"),
                 "duration_minutes": round(route.get("duration", 0) / 60),
                 "distance_meters": route.get("distance"),
@@ -80,6 +91,15 @@ class MapboxTool:
                 "geometry": route.get("geometry"),
                 "steps": self._parse_steps(route.get("legs", []))
             }
+            
+            # Cache the result
+            await cache.insert_one({
+                "route_key": route_key,
+                "route_data": route_data,
+                "cached_at": datetime.now(timezone.utc)
+            })
+            
+            return route_data
             
         except Exception as e:
             logger.warning("Mapbox directions error: %s", e)
@@ -113,6 +133,17 @@ class MapboxTool:
         # Build coordinates string
         coords_str = ";".join([f"{lon},{lat}" for lon, lat in coordinates])
         
+        # Check cache
+        import hashlib
+        from datetime import datetime, timezone
+        from app.db.mongo import mapbox_cache_collection
+
+        route_key = hashlib.md5(f"get_route_for_day:{coords_str}".encode()).hexdigest()
+        cache = mapbox_cache_collection()
+        cached = await cache.find_one({"route_key": route_key})
+        if cached:
+            return cached.get("route_data")
+        
         params = {
             "access_token": self.access_token,
             "geometries": "geojson",
@@ -138,7 +169,7 @@ class MapboxTool:
             route = routes[0]
             legs = route.get("legs", [])
             
-            return {
+            route_data = {
                 "total_duration_minutes": round(route.get("duration", 0) / 60),
                 "total_distance_km": round(route.get("distance", 0) / 1000, 1),
                 "geometry": route.get("geometry"),
@@ -152,6 +183,15 @@ class MapboxTool:
                     for i, leg in enumerate(legs)
                 ]
             }
+            
+            # Cache the result
+            await cache.insert_one({
+                "route_key": route_key,
+                "route_data": route_data,
+                "cached_at": datetime.now(timezone.utc)
+            })
+            
+            return route_data
             
         except Exception as e:
             logger.warning("Mapbox route error: %s", e)
@@ -182,7 +222,32 @@ class MapboxTool:
         
         if types:
             params["types"] = types
+            
+        return await self._execute_geocode(query, params)
         
+    async def get_cities_in_bbox(
+        self,
+        bbox: Tuple[float, float, float, float],
+        country: str = "IN",
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Find cities within a bounding box.
+        
+        Args:
+            bbox: (minLon, minLat, maxLon, maxLat)
+        """
+        params = {
+            "access_token": self.access_token,
+            "country": country,
+            "limit": limit,
+            "types": "place",  # Only find cities/towns
+            "bbox": f"{bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]}"
+        }
+        # We search with an empty or generic query that Mapbox accepts. 'city' works as a search term.
+        return await self._execute_geocode("city", params)
+        
+    async def _execute_geocode(self, query: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
         try:
             response = await self.client.get(
                 f"{self.GEOCODING_URL}/{query}.json",
@@ -196,6 +261,7 @@ class MapboxTool:
             return [
                 {
                     "place_name": f.get("place_name"),
+                    "name": f.get("text"), # The specific name of the city
                     "longitude": f.get("center", [None, None])[0],
                     "latitude": f.get("center", [None, None])[1],
                     "type": f.get("place_type", [None])[0]

@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Calendar, MapPin, ChevronRight, Filter, Search, Clock, Users, Compass, CheckSquare, Trash2 } from 'lucide-react';
+import { Calendar, MapPin, ChevronRight, Filter, Search, Clock, Users, Compass, CheckSquare, Trash2, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 const statusColors: Record<string, { bg: string; text: string }> = {
-    upcoming: { bg: '#D1FAE5', text: '#065F46' },
-    completed: { bg: '#E5E7EB', text: '#6B7280' },
-    planning: { bg: '#DBEAFE', text: '#1E40AF' },
+    upcoming: { bg: 'var(--status-green-bg, #D1FAE5)', text: 'var(--status-green-text, #065F46)' },
+    completed: { bg: 'var(--status-gray-bg, #E5E7EB)', text: 'var(--status-gray-text, #6B7280)' },
+    planning: { bg: 'var(--status-blue-bg, #DBEAFE)', text: 'var(--status-blue-text, #1E40AF)' },
 };
 
 import { api, Trip } from '@/lib/api';
@@ -318,6 +318,16 @@ export default function TripsPage() {
             {/* Right: Trip detail panel */}
             {selectedTrip && (
                 <div className="flex-1 flex flex-col border-l overflow-hidden relative" style={{ borderColor: 'rgba(0,0,0,0.07)' }}>
+                    {/* Mobile back header */}
+                    <div className="sticky top-0 md:hidden flex items-center gap-2 px-4 py-3 z-10"
+                        style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-subtle)' }}>
+                        <button onClick={() => setSelectedTrip(null)} className="p-1 -ml-1">
+                            <ArrowLeft className="w-5 h-5" style={{ color: 'var(--accent)' }} />
+                        </button>
+                        <span className="font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>
+                            {selectedTrip.title || 'Trip Details'}
+                        </span>
+                    </div>
                     {isLoadingDetail && (
                         <div className="absolute inset-0 bg-white/50 dark:bg-black/20 z-10 flex items-center justify-center pointer-events-none">
                             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-accent" />

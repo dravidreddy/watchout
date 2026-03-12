@@ -18,6 +18,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const unsubscribe = onAuthChange(async (firebaseUser: User | null) => {
             clearTimeout(timeout);
 
+            // Skip all auth syncing during E2E tests to rely purely on Zustand mock
+            if (process.env.NEXT_PUBLIC_TEST_MODE === 'true') {
+                setLoading(false);
+                return;
+            }
+
             if (firebaseUser) {
                 try {
                     // Sync with backend

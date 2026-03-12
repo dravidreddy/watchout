@@ -290,6 +290,7 @@ Rules:
 - Bundle travel vibe + budget into a single natural message.
 - Each option on its own line with emoji.
 - Do NOT ask about duration or group size again (already known).
+- If 'origin_city' is known and different from destination, proactively ask if they want a direct route or scenic road trip pitstops along the way.
 - After this, you should have everything needed (is_complete should be true next turn).
 
 Example:
@@ -306,9 +307,33 @@ Example:
   💚 Budget-friendly (₹3-5k/day)
   💛 Mid-range (₹7-12k/day)
   💜 Splurge a little (₹15k+/day)
+  
+  (If applicable based on origin):
+  "Since you're heading from Bangalore, should we plan a direct route, or make it a road trip with scenic pitstops (like Coorg or Mysore)?"
+  🚗 Direct route
+  🗺️ Scenic road trip 
 
 Set onboarding_phase = "phase_3_personalization" in output.
 </phase_3_personalization>
+"""
+    elif onboarding_phase == "phase_5_refinement":
+        phase_instructions = """
+<phase_5_refinement>
+GOAL: The core trip details are settled, but we need specific clarifying details requested by a specialist (e.g., specific food preferences, accessibility needs, or exact route options).
+
+Rules:
+- Ask exactly about the fields listed in "Still missing (ask these)".
+- Be brief and conversational, explaining why we need this detail to perfect their trip.
+- Give a few emoji quick-tap options if appropriate.
+
+Example:
+  "Just to make sure I pack your itinerary with the best recommendations, do you have any specific dietary restrictions I should know about? 🍽️"
+  🥦 Vegetarian
+  🌱 Vegan
+  ❌ None, I eat everything!
+
+Set onboarding_phase = "phase_5_refinement" in output.
+</phase_5_refinement>
 """
     else:
         phase_instructions = ""
@@ -395,6 +420,8 @@ def build_itinerary_prompt(
     transport_preference: str = "",
     # Bug 5 addition: group-size-aware accommodation hint
     group_accommodation_hint: str = "",
+    # Features addition: optionally include a high level macro journey plan
+    macro_journey_context: str = "",
 ) -> str:
     places_context = _dump_json(places_data) if places_data else "No external place data provided."
 
@@ -413,6 +440,7 @@ def build_itinerary_prompt(
             "task",
             f"""
 Design a realistic {days}-day itinerary for {destination_list} for {num_travelers} traveler(s).
+{f'Follow this pre-approved Macro Journey Plan: {macro_journey_context}' if macro_journey_context else ''}
             """,
         ),
         _section(
@@ -440,6 +468,7 @@ Build a coherent day-by-day arc:
 - Middle days deeper local immersion.
 - Final day easier logistics and memorable close.
 Keep timing physically feasible with travel buffers.
+{f'Ensure that inter-city travel days include appropriate travel buffers based on the Journey Plan.' if macro_journey_context else ''}
 Avoid rush-hour transfers (08:00-10:00 and 17:00-20:00 in major cities).
 Include one offbeat element each day.
 Call out booking-dependent activities.
@@ -466,6 +495,47 @@ Ensure each day has enough detail to render:
 - at least one practical stay or area hint per city segment when possible
             """,
         ),
+    )
+
+
+def build_macro_journey_prompt(
+    origin_city: str,
+    destination_city: str,
+    days: int,
+    vibe_str: str,
+    pace: str,
+    potential_pitstops: List[Dict[str, Any]],
+) -> str:
+    pitstop_context = _dump_json(potential_pitstops) if potential_pitstops else "None found."
+
+    return _join(
+        _section(
+            "task",
+            f"Design a high-level {days}-day road trip journey from {origin_city} to {destination_city}.",
+        ),
+        _section(
+            "traveler_profile",
+            f"""
+Vibe: {vibe_str}
+Pace: {pace}
+            """,
+        ),
+        _section(
+            "context",
+            f"""
+Potential interesting cities/pitstops along the route:
+{pitstop_context}
+            """,
+        ),
+        _section(
+            "rules",
+            """
+Allocate the total number of days across the origin, intermediate pitstops, and the final destination.
+Ensure the journey flows logically. A pitstop can be just for a few hours (nights=0) or an overnight stay (nights>0).
+Provide a "reason" for why the stop is recommended based on the user's vibe.
+The stops list should represent the sequential journey from Origin to Destination.
+            """
+        )
     )
 
 
@@ -731,7 +801,9 @@ def build_supervisor_planning_prompt(
     message: str,
     preferences: Dict[str, Any],
     memories: List[Dict[str, Any]],
+    agent_outputs: str = "",
 ) -> str:
+    agent_context = f"Current Agent Outputs:\n{agent_outputs}\n" if agent_outputs else ""
     return _join(
         _section(
             "task",
@@ -774,6 +846,7 @@ Known preferences:
 {_dump_json(preferences)}
 Memories:
 {_dump_json(memories)}
+{agent_context}
             """,
         ),
         _section(
@@ -796,7 +869,18 @@ def build_supervisor_weaver_prompt(
     user_message: str,
     preferences: Dict[str, Any],
     agent_outputs: str,
+    degraded_agents: List[str] = None,
 ) -> str:
+    degraded_context = ""
+    if degraded_agents:
+        agents_str = ", ".join(degraded_agents)
+        degraded_context = (
+            f"\\nCRITICAL: You attempted to fetch data using these agents: [{agents_str}], "
+            "but the calls failed or timed out. Gracefully apologize to the user inside your "
+            "conversation stream that you couldn't fetch that specific subset of information right now. "
+            "Do not drop the conversation; just seamlessly mention you'll try to get that info later.\\n"
+        )
+
     return _join(
         _section("task", "Compose final user-facing response from specialist outputs."),
         _section(
@@ -821,6 +905,7 @@ Preferences:
 {_dump_json(preferences)}
 Specialist outputs:
 {agent_outputs}
+{degraded_context}
             """,
         ),
         _section(
@@ -909,6 +994,42 @@ Start with one relevant emoji.
 No quotes, no explanation.
             """,
         ),
+    )
+
+
+def build_memory_extraction_prompt(history_text: str, current_preferences: Dict[str, Any]) -> str:
+    return _join(
+        _section("task", "Analyze the recent conversation and extract any permanent, long-term user travel preferences to store in memory."),
+        _section(
+            "context",
+            f"""
+Recent Conversation:
+{history_text}
+
+Current Known Trip Preferences:
+{_dump_json(current_preferences)}
+            """
+        ),
+        _section(
+            "rules",
+            """
+Only extract permanent, cross-session preferences.
+Examples of GOOD memories:
+- "User is strictly vegetarian."
+- "User prefers window seats."
+- "User loves boutique hotels."
+- "User has a severe peanut allergy."
+- "User dislikes waking up before 9 AM."
+
+Examples of BAD memories (ignore these):
+- "User wants to go to Goa this time."
+- "User is staying for 5 days."
+- "User wants a budget trip right now."
+
+Return the memories as concise, standalone strings in the third person ("User...").
+If no permanent preferences are detected, return an empty array.
+            """
+        )
     )
 
 

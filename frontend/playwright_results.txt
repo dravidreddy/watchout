@@ -1,0 +1,264 @@
+﻿
+Running 9 tests using 8 workers
+
+[1A[2K[1/9] [setup] ΓÇ║ tests\e2e\auth.setup.ts:7:6 ΓÇ║ authenticate
+[1A[2K[2/9] [chromium] ΓÇ║ tests\e2e\fallback.spec.ts:3:5 ΓÇ║ Frontend gracefully handles an AI agent degradation API failure
+[1A[2K[3/9] [firefox] ΓÇ║ tests\e2e\chat.spec.ts:3:5 ΓÇ║ Core chat flow sends a message and renders the mocked SSE response
+[1A[2K[4/9] [chromium] ΓÇ║ tests\e2e\chat.spec.ts:3:5 ΓÇ║ Core chat flow sends a message and renders the mocked SSE response
+[1A[2K[5/9] [chromium] ΓÇ║ tests\e2e\onboarding.spec.ts:6:5 ΓÇ║ New user completes onboarding flow
+[1A[2K[6/9] [chromium] ΓÇ║ tests\e2e\itinerary.spec.ts:3:5 ΓÇ║ Itinerary generation displays proper canonical markdown cards
+[1A[2K[7/9] [firefox] ΓÇ║ tests\e2e\onboarding.spec.ts:6:5 ΓÇ║ New user completes onboarding flow
+[1A[2K[8/9] [firefox] ΓÇ║ tests\e2e\fallback.spec.ts:3:5 ΓÇ║ Frontend gracefully handles an AI agent degradation API failure
+[1A[2K[9/9] [firefox] ΓÇ║ tests\e2e\itinerary.spec.ts:3:5 ΓÇ║ Itinerary generation displays proper canonical markdown cards
+[1A[2K  1) [chromium] ΓÇ║ tests\e2e\onboarding.spec.ts:6:5 ΓÇ║ New user completes onboarding flow ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: locator('text=Where do you live?')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for locator('text=Where do you live?')[22m
+
+
+      39 |   
+      40 |   // Verify modal elements
+    > 41 |   await expect(page.locator('text=Where do you live?')).toBeVisible();
+         |                                                         ^
+      42 |   
+      43 |   // Step 1: Location
+      44 |   await page.fill('input[placeholder="e.g. Mumbai, India"]', 'Tokyo');
+        at C:\Users\dravi\OneDrive\Desktop\Watchout\frontend\tests\e2e\onboarding.spec.ts:41:57
+
+    attachment #1: screenshot (image/png) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    test-results\onboarding-New-user-completes-onboarding-flow-chromium\test-failed-1.png
+    ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+    Error Context: test-results\onboarding-New-user-completes-onboarding-flow-chromium\error-context.md
+
+
+[1A[2K  2) [chromium] ΓÇ║ tests\e2e\fallback.spec.ts:3:5 ΓÇ║ Frontend gracefully handles an AI agent degradation API failure 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByTestId('chat-input')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByTestId('chat-input')[22m
+
+
+      24 |
+      25 |   const chatInput = page.getByTestId('chat-input');
+    > 26 |   await expect(chatInput).toBeVisible();
+         |                           ^
+      27 |
+      28 |   await chatInput.fill('Calculate route matrix');
+      29 |   await page.getByTestId('send-button').click();
+        at C:\Users\dravi\OneDrive\Desktop\Watchout\frontend\tests\e2e\fallback.spec.ts:26:27
+
+    attachment #1: screenshot (image/png) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    test-results\fallback-Frontend-graceful-fd805-ent-degradation-API-failure-chromium\test-failed-1.png
+    ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+    Error Context: test-results\fallback-Frontend-graceful-fd805-ent-degradation-API-failure-chromium\error-context.md
+
+
+[1A[2K  3) [chromium] ΓÇ║ tests\e2e\chat.spec.ts:3:5 ΓÇ║ Core chat flow sends a message and renders the mocked SSE response 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByTestId('chat-input')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByTestId('chat-input')[22m
+
+
+      35 |   // Verify chat input is there
+      36 |   const chatInput = page.getByTestId('chat-input');
+    > 37 |   await expect(chatInput).toBeVisible();
+         |                           ^
+      38 |
+      39 |   // Type a message
+      40 |   await chatInput.fill('I want to go to Europe!');
+        at C:\Users\dravi\OneDrive\Desktop\Watchout\frontend\tests\e2e\chat.spec.ts:37:27
+
+    attachment #1: screenshot (image/png) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    test-results\chat-Core-chat-flow-sends--214a8-ers-the-mocked-SSE-response-chromium\test-failed-1.png
+    ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+    Error Context: test-results\chat-Core-chat-flow-sends--214a8-ers-the-mocked-SSE-response-chromium\error-context.md
+
+
+[1A[2K  4) [chromium] ΓÇ║ tests\e2e\itinerary.spec.ts:3:5 ΓÇ║ Itinerary generation displays proper canonical markdown cards 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByTestId('chat-input')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByTestId('chat-input')[22m
+
+
+      52 |
+      53 |   const chatInput = page.getByTestId('chat-input');
+    > 54 |   await expect(chatInput).toBeVisible();
+         |                           ^
+      55 |
+      56 |   await chatInput.fill('Plan a 5 day trip to Tokyo');
+      57 |   await page.getByTestId('send-button').click();
+        at C:\Users\dravi\OneDrive\Desktop\Watchout\frontend\tests\e2e\itinerary.spec.ts:54:27
+
+    attachment #1: screenshot (image/png) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    test-results\itinerary-Itinerary-genera-2f291-er-canonical-markdown-cards-chromium\test-failed-1.png
+    ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+    Error Context: test-results\itinerary-Itinerary-genera-2f291-er-canonical-markdown-cards-chromium\error-context.md
+
+
+[1A[2K  5) [firefox] ΓÇ║ tests\e2e\chat.spec.ts:3:5 ΓÇ║ Core chat flow sends a message and renders the mocked SSE response 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByTestId('chat-input')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByTestId('chat-input')[22m
+
+
+      35 |   // Verify chat input is there
+      36 |   const chatInput = page.getByTestId('chat-input');
+    > 37 |   await expect(chatInput).toBeVisible();
+         |                           ^
+      38 |
+      39 |   // Type a message
+      40 |   await chatInput.fill('I want to go to Europe!');
+        at C:\Users\dravi\OneDrive\Desktop\Watchout\frontend\tests\e2e\chat.spec.ts:37:27
+
+    attachment #1: screenshot (image/png) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    test-results\chat-Core-chat-flow-sends--214a8-ers-the-mocked-SSE-response-firefox\test-failed-1.png
+    ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+    Error Context: test-results\chat-Core-chat-flow-sends--214a8-ers-the-mocked-SSE-response-firefox\error-context.md
+
+
+[1A[2K  6) [firefox] ΓÇ║ tests\e2e\fallback.spec.ts:3:5 ΓÇ║ Frontend gracefully handles an AI agent degradation API failure 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByTestId('chat-input')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByTestId('chat-input')[22m
+
+
+      24 |
+      25 |   const chatInput = page.getByTestId('chat-input');
+    > 26 |   await expect(chatInput).toBeVisible();
+         |                           ^
+      27 |
+      28 |   await chatInput.fill('Calculate route matrix');
+      29 |   await page.getByTestId('send-button').click();
+        at C:\Users\dravi\OneDrive\Desktop\Watchout\frontend\tests\e2e\fallback.spec.ts:26:27
+
+    attachment #1: screenshot (image/png) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    test-results\fallback-Frontend-graceful-fd805-ent-degradation-API-failure-firefox\test-failed-1.png
+    ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+    Error Context: test-results\fallback-Frontend-graceful-fd805-ent-degradation-API-failure-firefox\error-context.md
+
+
+[1A[2K  7) [firefox] ΓÇ║ tests\e2e\onboarding.spec.ts:6:5 ΓÇ║ New user completes onboarding flow ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: locator('text=Where do you live?')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for locator('text=Where do you live?')[22m
+
+
+      39 |   
+      40 |   // Verify modal elements
+    > 41 |   await expect(page.locator('text=Where do you live?')).toBeVisible();
+         |                                                         ^
+      42 |   
+      43 |   // Step 1: Location
+      44 |   await page.fill('input[placeholder="e.g. Mumbai, India"]', 'Tokyo');
+        at C:\Users\dravi\OneDrive\Desktop\Watchout\frontend\tests\e2e\onboarding.spec.ts:41:57
+
+    attachment #1: screenshot (image/png) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    test-results\onboarding-New-user-completes-onboarding-flow-firefox\test-failed-1.png
+    ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+    Error Context: test-results\onboarding-New-user-completes-onboarding-flow-firefox\error-context.md
+
+
+[1A[2K  8) [firefox] ΓÇ║ tests\e2e\itinerary.spec.ts:3:5 ΓÇ║ Itinerary generation displays proper canonical markdown cards 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByTestId('chat-input')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByTestId('chat-input')[22m
+
+
+      52 |
+      53 |   const chatInput = page.getByTestId('chat-input');
+    > 54 |   await expect(chatInput).toBeVisible();
+         |                           ^
+      55 |
+      56 |   await chatInput.fill('Plan a 5 day trip to Tokyo');
+      57 |   await page.getByTestId('send-button').click();
+        at C:\Users\dravi\OneDrive\Desktop\Watchout\frontend\tests\e2e\itinerary.spec.ts:54:27
+
+    attachment #1: screenshot (image/png) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    test-results\itinerary-Itinerary-genera-2f291-er-canonical-markdown-cards-firefox\test-failed-1.png
+    ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+    Error Context: test-results\itinerary-Itinerary-genera-2f291-er-canonical-markdown-cards-firefox\error-context.md
+
+
+[1A[2K  8 failed
+    [chromium] ΓÇ║ tests\e2e\chat.spec.ts:3:5 ΓÇ║ Core chat flow sends a message and renders the mocked SSE response 
+    [chromium] ΓÇ║ tests\e2e\fallback.spec.ts:3:5 ΓÇ║ Frontend gracefully handles an AI agent degradation API failure 
+    [chromium] ΓÇ║ tests\e2e\itinerary.spec.ts:3:5 ΓÇ║ Itinerary generation displays proper canonical markdown cards 
+    [chromium] ΓÇ║ tests\e2e\onboarding.spec.ts:6:5 ΓÇ║ New user completes onboarding flow ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    [firefox] ΓÇ║ tests\e2e\chat.spec.ts:3:5 ΓÇ║ Core chat flow sends a message and renders the mocked SSE response 
+    [firefox] ΓÇ║ tests\e2e\fallback.spec.ts:3:5 ΓÇ║ Frontend gracefully handles an AI agent degradation API failure 
+    [firefox] ΓÇ║ tests\e2e\itinerary.spec.ts:3:5 ΓÇ║ Itinerary generation displays proper canonical markdown cards 
+    [firefox] ΓÇ║ tests\e2e\onboarding.spec.ts:6:5 ΓÇ║ New user completes onboarding flow ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  1 passed (15.9s)
+
+[36m  Serving HTML report at http://localhost:9323. Press Ctrl+C to quit.[39m

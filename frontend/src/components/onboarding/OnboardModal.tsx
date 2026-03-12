@@ -207,6 +207,7 @@ export const OnboardModal: React.FC<OnboardModalProps> = ({ onComplete }) => {
                                                 key={m.id}
                                                 onClick={() => toggleVibe(m.id)}
                                                 className={`mood-pill ${form.travel_vibe.includes(m.id) ? 'active' : ''}`}
+                                                data-testid={`mood-selector-${m.id}`}
                                             >
                                                 <span className="text-base leading-none">{m.emoji}</span>
                                                 <span>{m.label}</span>
@@ -290,6 +291,7 @@ export const OnboardModal: React.FC<OnboardModalProps> = ({ onComplete }) => {
                             onClick={handleNext}
                             disabled={isSubmitting || (step === 0 && !form.home_city)}
                             className="btn btn-primary px-8 py-3 font-bold flex items-center gap-2 disabled:opacity-50"
+                            data-testid="start-journey-btn"
                         >
                             {isSubmitting ? 'Saving...' : (step === steps.length - 1 ? 'Get Started 🚀' : 'Next')}
                             {!isSubmitting && <ChevronRight className="w-5 h-5" />}

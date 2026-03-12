@@ -1,12 +1,15 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import Response
 from bson import ObjectId
+import logging
+import re
 
 from app.core.firebase_auth import verify_firebase_token
 from app.db.mongo import trips_collection
 from app.services.pdf_generator import itinerary_pdf_service
 
 router = APIRouter(prefix="/export", tags=["Export"])
+logger = logging.getLogger(__name__)
 
 @router.get("/pdf/{trip_id}")
 async def export_itinerary_to_pdf(
@@ -36,8 +39,10 @@ async def export_itinerary_to_pdf(
         
     try:
         pdf_bytes = await itinerary_pdf_service.generate_itinerary_pdf(trip)
-        
-        filename = f"Itinerary_{trip['title'].replace(' ', '_')}.pdf"
+        safe_title = re.sub(r"[^A-Za-z0-9._-]+", "_", str(trip.get("title", "trip"))).strip("._")
+        if not safe_title:
+            safe_title = "trip"
+        filename = f"Itinerary_{safe_title}.pdf"
         
         return Response(
             content=pdf_bytes,
@@ -48,9 +53,10 @@ async def export_itinerary_to_pdf(
         )
     except Exception as e:
         error_msg = str(e)
+        logger.error("Failed to generate itinerary PDF for trip_id=%s user_id=%s: %s", trip_id, user_id, error_msg, exc_info=True)
         if "Executable doesn't exist" in error_msg or "Chromium" in error_msg:
             raise HTTPException(
                 status_code=500, 
-                detail=f"PDF Generator Error (Missing Chromium dependency): {error_msg}. Try running 'playwright install chromium' on the server."
+                detail="PDF export is temporarily unavailable because the browser runtime is missing on the server."
             )
-        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {error_msg}")
+        raise HTTPException(status_code=500, detail="Failed to generate PDF")

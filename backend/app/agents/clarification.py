@@ -131,8 +131,12 @@ class ClarificationAgent(BaseAgent):
         # Compute which funnel phase we're in (deterministic)
         # ------------------------------------------------------------------
         phase = _compute_onboarding_phase(current_prefs)
+        
+        # Override to dynamic refinement if core fields are set but extra fields are missing
+        if phase == "phase_4_ready" and len(missing_fields) > 0:
+            phase = "phase_5_refinement"
 
-        # If already in phase_4_ready, mark complete immediately (no LLM call needed)
+        # If already in phase_4_ready and no dynamic missing fields, mark complete immediately
         if phase == "phase_4_ready":
             return {
                 "assistant_message": "",
@@ -157,6 +161,11 @@ class ClarificationAgent(BaseAgent):
             "travel_vibe": bool(current_prefs.get("travel_vibe")),
         }
         effective_missing = [f for f in self.required_fields if not satisfied.get(f, False)]
+        
+        # Add dynamic missing fields from downstream agents or supervisor
+        for mf in missing_fields:
+            if mf not in effective_missing and not current_prefs.get(mf):
+                effective_missing.append(mf)
 
         # ------------------------------------------------------------------
         # Build prompt
@@ -164,6 +173,7 @@ class ClarificationAgent(BaseAgent):
         extraction_prompt = self._build_extraction_prompt(
             user_input=user_input,
             current_prefs=current_prefs,
+            memories=context.get("memories", []),
             conversation_history=conversation_history,
             effective_missing=effective_missing,
             phase=phase,
@@ -205,6 +215,7 @@ class ClarificationAgent(BaseAgent):
                         "trip_motivation": {"type": "string"},
                         "spontaneity": {"type": "string"},
                         "special_requirements": {"type": "string"},
+                        "road_trip_preference": {"type": "string"},
                         "interests": {"type": "array", "items": {"type": "string"}},
                         "city_segments": {
                             "type": "array",
@@ -241,6 +252,12 @@ class ClarificationAgent(BaseAgent):
                 if not merged.get(f)
                 and not (f == "destinations" and merged.get("destination_open"))
             ]
+            
+            # Incorporate dynamic unfulfilled missing fields
+            for mf in missing_fields:
+                if mf not in computed_missing and not merged.get(mf):
+                    computed_missing.append(mf)
+                    
             is_complete = len(computed_missing) == 0
 
             result_phase = result.get("onboarding_phase", phase)
@@ -289,6 +306,7 @@ class ClarificationAgent(BaseAgent):
         self,
         user_input: str,
         current_prefs: Dict[str, Any],
+        memories: List[Dict[str, Any]],
         conversation_history: Optional[List[Dict[str, Any]]],
         effective_missing: List[str],
         phase: str,
@@ -312,13 +330,18 @@ class ClarificationAgent(BaseAgent):
 
         surprise_section = ""
         if is_surprise:
-            surprise_section = """
+            memory_context = ""
+            if memories:
+                memory_lines = "\\n".join([f"- {m.get('content', '')}" for m in memories])
+                memory_context = f"\\nCRITICAL INSTRUCTION: The user has permanent preferences saved in their profile:\\n{memory_lines}\\nSTRONGLY bias your 3 destination suggestions to match these permanent memories (e.g. if they prefer beaches, suggest coastal areas). Explicitly mention how the suggestion fits their preference in the 'pitch'.\\n"
+
+            surprise_section = f"""
 <surprise_destination_mode>
 The user wants YOU to pick a destination. Do NOT ask them again.
 In phase_2_suggestions: provide 3 destination cards in destination_suggestions[].
 Each card: city, emoji, one-line pitch (max 12 words), best_for tag.
-Pick destinations that match their vibe/budget/duration if known.
-Example: {"city": "Goa", "emoji": "🏖️", "pitch": "Beaches, feni, and sunsets that never disappoint", "best_for": "chill + nightlife"}
+Pick destinations that match their vibe/budget/duration if known.{memory_context}
+Example: {{"city": "Goa", "emoji": "🏖️", "pitch": "Beaches, feni, and sunsets that never disappoint", "best_for": "chill + nightlife"}}
 </surprise_destination_mode>
 """
 

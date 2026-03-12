@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, Star, Clock, X, Navigation, ChevronLeft, ChevronRight, Quote } from 'lucide-react';
+import { MapPin, Star, X, Navigation, ChevronLeft, ChevronRight, Quote } from 'lucide-react';
 import { Place, api } from '@/lib/api';
 
 interface MediaPlaceCardProps {
@@ -29,18 +29,20 @@ export function MediaPlaceCard({ place }: MediaPlaceCardProps) {
         ? types[0].replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
         : 'Tourist Attraction';
 
-    // Fetch details when modal opens
-    useEffect(() => {
-        if (isOpen && !detailedPlace) {
-            setIsLoadingDetails(true);
-            api.getPlaceDetails(place.place_id)
-                .then(data => {
-                    setDetailedPlace(data);
-                })
-                .catch(err => console.error("Failed to fetch place details:", err))
-                .finally(() => setIsLoadingDetails(false));
+    const openDetailsModal = async () => {
+        setIsOpen(true);
+        if (detailedPlace) return;
+
+        setIsLoadingDetails(true);
+        try {
+            const data = await api.getPlaceDetails(place.place_id);
+            setDetailedPlace(data);
+        } catch (err) {
+            console.error("Failed to fetch place details:", err);
+        } finally {
+            setIsLoadingDetails(false);
         }
-    }, [isOpen, place.place_id, detailedPlace]);
+    };
 
     const nextPhoto = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -58,7 +60,7 @@ export function MediaPlaceCard({ place }: MediaPlaceCardProps) {
             <motion.div
                 whileHover={{ scale: 1.02, y: -4 }}
                 whileTap={{ scale: 0.98 }}
-                onClick={() => setIsOpen(true)}
+                onClick={openDetailsModal}
                 className="relative cursor-pointer rounded-2xl overflow-hidden group shadow-md break-inside-avoid mb-4 bg-gray-900"
                 style={{
                     // Randomize height slightly for masonry effect if desired, or let image dictate
@@ -203,7 +205,9 @@ export function MediaPlaceCard({ place }: MediaPlaceCardProps) {
                                     <div className="mb-6 p-4 rounded-xl relative overflow-hidden" style={{ background: 'var(--bg-tertiary)' }}>
                                         <Quote className="absolute -top-2 -left-2 w-12 h-12 opacity-5" style={{ color: 'var(--text-primary)' }} />
                                         <p className="text-sm italic leading-relaxed relative z-10" style={{ color: 'var(--text-secondary)' }}>
-                                            "{detailedPlace.reviews[0].text}"
+                                            <span aria-hidden="true">&ldquo;</span>
+                                            {detailedPlace.reviews[0].text}
+                                            <span aria-hidden="true">&rdquo;</span>
                                         </p>
                                         <span className="block mt-2 text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>
                                             — {detailedPlace.reviews[0].author}

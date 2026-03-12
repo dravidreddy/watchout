@@ -6,23 +6,33 @@
 
 import { useState, useEffect } from 'react';
 
+interface BeforeInstallPromptEvent extends Event {
+    prompt: () => Promise<void>;
+    userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+}
+
 export default function PWAInstallBanner() {
     const [showBanner, setShowBanner] = useState(false);
-    const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+    const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
 
     useEffect(() => {
         const handler = (e: Event) => {
             e.preventDefault();
-            setDeferredPrompt(e);
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+            if (isStandalone) return;
+
+            const dismissed = localStorage.getItem('pwa-banner-dismissed');
+            if (dismissed) {
+                const dismissedTime = parseInt(dismissed, 10);
+                const sevenDays = 7 * 24 * 60 * 60 * 1000;
+                if (Date.now() - dismissedTime < sevenDays) return;
+            }
+
+            setDeferredPrompt(e as BeforeInstallPromptEvent);
             setShowBanner(true);
         };
 
         window.addEventListener('beforeinstallprompt', handler);
-
-        // Check if already installed
-        if (window.matchMedia('(display-mode: standalone)').matches) {
-            setShowBanner(false);
-        }
 
         return () => {
             window.removeEventListener('beforeinstallprompt', handler);
@@ -45,21 +55,10 @@ export default function PWAInstallBanner() {
 
     const handleDismiss = () => {
         setShowBanner(false);
+        setDeferredPrompt(null);
         // Remember dismissal for 7 days
         localStorage.setItem('pwa-banner-dismissed', Date.now().toString());
     };
-
-    // Don't show if dismissed recently
-    useEffect(() => {
-        const dismissed = localStorage.getItem('pwa-banner-dismissed');
-        if (dismissed) {
-            const dismissedTime = parseInt(dismissed);
-            const sevenDays = 7 * 24 * 60 * 60 * 1000;
-            if (Date.now() - dismissedTime < sevenDays) {
-                setShowBanner(false);
-            }
-        }
-    }, []);
 
     if (!showBanner) return null;
 

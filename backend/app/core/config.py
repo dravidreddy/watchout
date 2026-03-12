@@ -77,6 +77,8 @@ class Settings(BaseSettings):
     ff_enable_pdf_export: bool = False
     ff_enable_explore_page: bool = True
     ff_ab_test_prompts: bool = False  # Toggle for prompt A/B testing
+    ff_enable_graph_supervisor: bool = True
+    ff_compare_graph_with_legacy: bool = False
     
     class Config:
         env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env")

@@ -436,6 +436,9 @@ export interface UserPreferences {
     language?: string;
     current_mood?: string;
     travel_vibe?: string[];
+    notifications_email?: boolean;
+    notifications_push?: boolean;
+    notifications_trip_updates?: boolean;
 }
 
 export interface Trip {
@@ -477,7 +480,20 @@ export interface TripCreate {
     itinerary?: Itinerary;
 }
 
+export interface JourneyStop {
+    city_name: string;
+    nights: number;
+    reason?: string;
+}
+
+export interface JourneyRoute {
+    origin: string;
+    destination: string;
+    stops: JourneyStop[];
+}
+
 export interface Itinerary {
+    journey_route?: JourneyRoute;
     days: DayPlan[];
     total_estimated_cost?: number;
     highlights?: string[];

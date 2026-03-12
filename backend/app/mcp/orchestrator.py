@@ -28,6 +28,8 @@ except Exception:  # pragma: no cover - import-compat fallback
     from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 
+from app.core.config import settings
+from app.graph.supervisor import ExecutiveTripSupervisor
 from app.mcp.server import mcp
 from app.mcp.state import CitySegment, TripState, TripStateMachine
 
@@ -77,6 +79,9 @@ class WatchoutOrchestrator:
     Call `process()` to get an async generator of SSE-compatible event dicts.
     """
 
+    def __init__(self):
+        self.executive_supervisor = ExecutiveTripSupervisor()
+
     # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
@@ -117,18 +122,22 @@ class WatchoutOrchestrator:
             elif sm.state == TripState.CONFIRMING:
                 # User has just confirmed — advance to planning
                 sm.state = TripState.PLANNING
-                async for event in self._planning_phase(client, sm):
+                async for event in self._planning_phase(
+                    client, sm, user_id, message, trip_context, conversation_history
+                ):
                     yield event
 
             # ── Phase: PLANNING (direct trigger, e.g. re-planning) ──────
-            elif sm.state == TripState.PLANNING:
-                async for event in self._planning_phase(client, sm):
+            elif sm.state in (TripState.PLANNING, TripState.COMPLETE):
+                async for event in self._planning_phase(
+                    client, sm, user_id, message, trip_context, conversation_history
+                ):
                     yield event
 
             else:
                 # Already complete — allow freeform follow-up questions
-                async for event in self._gathering_phase(
-                    client, sm, message, conversation_history
+                async for event in self._planning_phase(
+                    client, sm, user_id, message, trip_context, conversation_history
                 ):
                     yield event
 
@@ -235,6 +244,110 @@ class WatchoutOrchestrator:
     # ------------------------------------------------------------------
 
     async def _planning_phase(
+        self,
+        client: Client,
+        sm: TripStateMachine,
+        user_id: str,
+        message: str,
+        trip_context: Dict[str, Any],
+        history: List[Dict[str, Any]],
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        if not settings.ff_enable_graph_supervisor:
+            async for event in self._planning_phase_legacy(client, sm):
+                yield event
+            return
+
+        yield {
+            "type": "status",
+            "agent": "Executive Trip Supervisor",
+            "status": "Building your trip with the new planning graph...",
+        }
+
+        graph_state = await self.executive_supervisor.run(
+            user_id=user_id,
+            trip_id=str(trip_context.get("trip_id") or ""),
+            message=message,
+            trip_context=trip_context,
+            conversation_history=history,
+            trip_state_machine=sm,
+        )
+
+        sm.preferences = dict(graph_state.preferences or sm.preferences)
+
+        clarification_message = graph_state.ui_payloads.get("clarification_message")
+        if clarification_message and not graph_state.itinerary_plan:
+            sm.state = TripState.GATHERING
+            yield {"type": "token", "content": clarification_message}
+            if graph_state.ui_payloads.get("destination_suggestions"):
+                yield {
+                    "type": "data",
+                    "data_type": "destination_suggestions",
+                    "data": graph_state.ui_payloads.get("destination_suggestions"),
+                }
+            yield {"type": "data", "data_type": "preferences", "data": sm.preferences}
+            yield {
+                "type": "data",
+                "data_type": "trip_state",
+                "data": {"state": sm.state.value, "missing_fields": graph_state.clarifications_needed},
+            }
+            return
+
+        if settings.ff_compare_graph_with_legacy:
+            await self._run_shadow_compare_legacy(client, sm, graph_state)
+
+        weather_payload = graph_state.ui_payloads.get("weather")
+        if weather_payload:
+            yield {"type": "data", "data_type": "weather", "data": weather_payload}
+
+        route_payload = self._build_route_event_payload(graph_state.route_plan)
+        if route_payload:
+            yield {"type": "data", "data_type": "route", "data": route_payload}
+            yield {"type": "data", "data_type": "route_plan", "data": graph_state.route_plan}
+
+        if graph_state.destination_experience_plan:
+            yield {
+                "type": "data",
+                "data_type": "destination_experience_plan",
+                "data": graph_state.destination_experience_plan,
+            }
+
+        if graph_state.cost_model:
+            yield {"type": "data", "data_type": "cost_model", "data": graph_state.cost_model}
+
+        if graph_state.evidence_refs:
+            yield {
+                "type": "data",
+                "data_type": "graph_metadata",
+                "data": {
+                    "confidence": graph_state.confidence,
+                    "evidence_count": len(graph_state.evidence_refs),
+                    "conflicts": graph_state.conflicts,
+                    "validation_issues": graph_state.validation_issues,
+                    "regeneration_scope": graph_state.regeneration_scope,
+                },
+            }
+
+        if graph_state.itinerary_plan:
+            sm.state = TripState.COMPLETE
+            yield {
+                "type": "data",
+                "data_type": "itinerary",
+                "data": graph_state.itinerary_plan,
+            }
+            yield {"type": "data", "data_type": "preferences", "data": sm.preferences}
+            yield {
+                "type": "data",
+                "data_type": "trip_state",
+                "data": {"state": sm.state.value, "missing_fields": []},
+            }
+            response_markdown = graph_state.ui_payloads.get("response_markdown")
+            if response_markdown:
+                yield {"type": "token", "content": response_markdown}
+        else:
+            async for event in self._planning_phase_legacy(client, sm):
+                yield event
+
+    async def _planning_phase_legacy(
         self,
         client: Client,
         sm: TripStateMachine,
@@ -396,6 +509,55 @@ class WatchoutOrchestrator:
             "type": "token",
             "content": _summary_message(segments, full_itinerary),
         }
+
+    async def _run_shadow_compare_legacy(
+        self,
+        client: Client,
+        sm: TripStateMachine,
+        graph_state: Any,
+    ) -> None:
+        """Best-effort legacy shadow comparison for rollout confidence."""
+        try:
+            shadow_sm = TripStateMachine(dict(sm.preferences), TripState.PLANNING)
+            legacy_itinerary = None
+            async for event in self._planning_phase_legacy(client, shadow_sm):
+                if event.get("type") == "data" and event.get("data_type") == "itinerary":
+                    legacy_itinerary = event.get("data")
+
+            if not legacy_itinerary:
+                return
+
+            new_itinerary = graph_state.itinerary_plan or {}
+            comparison = {
+                "confidence": 0.6,
+                "legacy_num_days": legacy_itinerary.get("num_days"),
+                "graph_num_days": new_itinerary.get("num_days"),
+                "legacy_city_count": len(legacy_itinerary.get("cities", [])),
+                "graph_city_count": len(new_itinerary.get("cities", [])),
+                "same_cities": sorted(legacy_itinerary.get("cities", [])) == sorted(new_itinerary.get("cities", [])),
+            }
+            await self.executive_supervisor.persistence.persist_shadow_comparison(
+                trip_id=graph_state.trip_id,
+                user_id=graph_state.user_id,
+                request_id=graph_state.request_id,
+                comparison=comparison,
+            )
+        except Exception as exc:
+            logger.warning("Legacy shadow comparison failed: %s", exc)
+
+    def _build_route_event_payload(self, route_plan: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not route_plan:
+            return None
+        first_route = None
+        for leg in route_plan.get("legs", []):
+            route_obj = leg.get("route")
+            if route_obj:
+                first_route = route_obj
+                break
+        payload = {"route_plan": route_plan}
+        if first_route:
+            payload["route"] = first_route
+        return payload
 
     # ------------------------------------------------------------------
     # Cancel support (compatibility with existing /cancel endpoint)

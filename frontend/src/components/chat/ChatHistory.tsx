@@ -234,6 +234,13 @@ export function ChatHistory({ onSelectConversation, currentTripId, isOpen, onClo
                                     <div className="p-4 text-center" style={{ color: 'var(--text-tertiary)' }}>
                                         <MessageSquare className="w-12 h-12 mx-auto mb-2 opacity-50" aria-hidden="true" />
                                         <p>No conversations yet</p>
+                                        <button
+                                            onClick={onClose}
+                                            className="mt-4 px-4 py-2 rounded-xl text-sm font-medium text-white transition-all hover:opacity-90"
+                                            style={{ background: 'var(--accent)' }}
+                                        >
+                                            Start your first trip ✨
+                                        </button>
                                     </div>
                                 ) : (
                                     conversations.map((convo, idx) => {

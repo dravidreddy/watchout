@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, Compass, MapPin, MoreVertical, Check } from 'lucide-react';
+import { Search, Compass, MapPin, SlidersHorizontal, Check } from 'lucide-react';
 import { api, Trip, Place, PlacePrediction } from '@/lib/api';
 import { MediaPlaceCard } from '@/components/places/MediaPlaceCard';
 import { useSearchParams } from 'next/navigation';
@@ -188,6 +188,12 @@ export default function ExplorePage() {
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 onFocus={() => searchQuery.length > 2 && setShowAutocomplete(true)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && searchQuery.trim()) {
+                                        setShowAutocomplete(false);
+                                        fetchPlacesByQuery(searchQuery, selectedPlaceType);
+                                    }
+                                }}
                                 className="w-full pl-12 pr-4 py-4 rounded-2xl transition-all font-medium"
                                 style={{
                                     background: 'var(--bg-secondary)',
@@ -247,7 +253,7 @@ export default function ExplorePage() {
                                     color: showFilters ? '#fff' : 'var(--text-secondary)'
                                 }}
                             >
-                                <MoreVertical className="w-6 h-6" />
+                                <SlidersHorizontal className="w-6 h-6" />
                             </motion.button>
 
                             <AnimatePresence>

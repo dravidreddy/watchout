@@ -146,6 +146,30 @@ export function TripDetailPanel({ trip, onClose }: TripDetailPanelProps) {
                 </button>
             </div>
 
+            {/* Journey Route Overview */}
+            {itinerary?.journey_route && (
+                <div className="flex-shrink-0 px-5 pt-5 pb-2">
+                    <h3 className="font-semibold text-sm mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                        <MapPin className="w-4 h-4 text-accent" />
+                        Road Trip Route
+                    </h3>
+                    <div className="px-2">
+                        <div className="space-y-4 relative before:absolute before:top-2 before:bottom-2 before:left-3 before:-ml-px before:w-0.5 before:bg-[color:var(--accent-50)]">
+                            {itinerary.journey_route.stops.map((stop: any, i: number) => (
+                                <div key={i} className="relative pl-8">
+                                    <span className="absolute left-1.5 top-1.5 w-3 h-3 rounded-full border-2" style={{ borderColor: 'var(--bg-primary)', backgroundColor: 'var(--accent)' }}></span>
+                                    <div className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{stop.city_name}</div>
+                                    <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                                        {stop.nights > 0 ? `${stop.nights} night${stop.nights > 1 ? 's' : ''} stay` : 'Day trip pitstop'}
+                                        {stop.reason && <span className="ml-2 italic">— {stop.reason}</span>}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Day-by-Day Itinerary */}
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
                 {days.length === 0 && !itinerary ? (

@@ -121,8 +121,26 @@ class AccommodationDetails(BaseModel):
     photo_url: Optional[str] = None
 
 
+class JourneyStop(BaseModel):
+    """A city or stop along the overall journey."""
+    city_name: str
+    nights: int = 0  # 0 indicates a daytime pitstop
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    reason: Optional[str] = None  # Why is this stop recommended
+
+class JourneyRoute(BaseModel):
+    """The high-level route mapping for the trip."""
+    origin: str
+    destination: str
+    stops: List[JourneyStop] = Field(default_factory=list)
+
+
 class Itinerary(BaseModel):
     """Complete trip itinerary."""
+    
+    # The high-level journey route (for road trips)
+    journey_route: Optional[JourneyRoute] = None
     
     days: List[DayPlan] = Field(default_factory=list)
     

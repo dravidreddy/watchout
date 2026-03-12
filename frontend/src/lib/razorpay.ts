@@ -43,7 +43,8 @@ export const openCheckout = async (options: CheckoutOptions) => {
         const order = await api.createOrder(options.planId);
 
         const rzpOptions = {
-            key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_dummy_id',
+            // Always use the key id returned by backend order creation to avoid FE/BE config drift.
+            key: order.key_id || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_dummy_id',
             amount: order.amount,
             currency: order.currency,
             name: 'Watchout',

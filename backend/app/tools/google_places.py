@@ -52,6 +52,17 @@ class GooglePlacesTool:
         if place_type:
             params["type"] = place_type
         
+        # Check cache first
+        import hashlib
+        from datetime import datetime, timezone
+        key_str = f"search_places:{query}:{location}:{radius}:{place_type}"
+        query_key = hashlib.md5(key_str.encode()).hexdigest()
+        
+        cache = places_cache_collection()
+        cached = await cache.find_one({"query_key": query_key})
+        if cached:
+            return cached.get("results", [])
+
         try:
             response = await self.client.get(
                 f"{self.BASE_URL}/textsearch/json",
@@ -64,7 +75,16 @@ class GooglePlacesTool:
             
             rs = data.get("results", [])
             # Skip strict filtering if there's only 1 exact result
-            return self._parse_results(rs, strict_filter=(len(rs) > 1))
+            parsed_results = self._parse_results(rs, strict_filter=(len(rs) > 1))
+            
+            # Cache the results
+            await cache.insert_one({
+                "query_key": query_key,
+                "results": parsed_results,
+                "cached_at": datetime.now(timezone.utc)
+            })
+            
+            return parsed_results
             
         except Exception as e:
             logger.warning("Google Places search error: %s", e)
@@ -101,6 +121,21 @@ class GooglePlacesTool:
         if keyword:
             params["keyword"] = keyword
         
+        # Check cache first
+        import hashlib
+        from datetime import datetime, timezone
+        
+        # Round lat/lng to ~100m precision (3 decimal places) to improve cache hits for nearby searches
+        lat_rounded = round(latitude, 3)
+        lng_rounded = round(longitude, 3)
+        key_str = f"search_nearby:{lat_rounded}:{lng_rounded}:{radius}:{place_type}:{keyword}"
+        query_key = hashlib.md5(key_str.encode()).hexdigest()
+        
+        cache = places_cache_collection()
+        cached = await cache.find_one({"query_key": query_key})
+        if cached:
+            return cached.get("results", [])
+
         try:
             response = await self.client.get(
                 f"{self.BASE_URL}/nearbysearch/json",
@@ -113,7 +148,16 @@ class GooglePlacesTool:
                 return []
                 
             rs = data.get("results", [])
-            return self._parse_results(rs, strict_filter=(len(rs) > 1))
+            parsed_results = self._parse_results(rs, strict_filter=(len(rs) > 1))
+            
+            # Cache the results
+            await cache.insert_one({
+                "query_key": query_key,
+                "results": parsed_results,
+                "cached_at": datetime.now(timezone.utc)
+            })
+            
+            return parsed_results
             
         except Exception as e:
             logger.warning("Google Places nearby search error: %s", e)

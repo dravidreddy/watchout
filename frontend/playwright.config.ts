@@ -27,8 +27,24 @@ export default defineConfig({
     /* Configure projects for major browsers */
     projects: [
         {
+            name: 'setup',
+            testMatch: /.*\.setup\.ts/,
+        },
+        {
             name: 'chromium',
-            use: { ...devices['Desktop Chrome'] },
+            use: { 
+                ...devices['Desktop Chrome'],
+                storageState: 'playwright/.auth/user.json',
+            },
+            dependencies: ['setup'],
+        },
+        {
+            name: 'firefox',
+            use: { 
+                ...devices['Desktop Firefox'],
+                storageState: 'playwright/.auth/user.json',
+            },
+            dependencies: ['setup'],
         },
     ],
 
@@ -39,6 +55,7 @@ export default defineConfig({
         env: {
             NEXT_PUBLIC_ENV: 'development',
             NEXT_PUBLIC_DEV_BYPASS: 'e2e-bypass-token',
+            NEXT_PUBLIC_TEST_MODE: 'true',
         },
         reuseExistingServer: !process.env.CI,
     },

@@ -13,12 +13,14 @@ logger = logging.getLogger(__name__)
 from fastapi import APIRouter, Depends, HTTPException, Body, Request, BackgroundTasks, Response
 from fastapi.responses import StreamingResponse
 
+from app.core.config import settings
 from app.core.rate_limiter import limiter, RateLimits
 from app.core.firebase_auth import verify_firebase_token
 from app.db.mongo import get_database
 from app.models.chat import ChatRequest, ChatResponse
 from app.core.token_limiter import current_user_id, check_trip_limit
 from app.prompts import build_trip_title_prompt
+from app.agents.memory_extractor import MemoryExtractorAgent
 
 router = APIRouter()
 
@@ -166,6 +168,12 @@ async def stream_chat(
             "timezone_offset": request.headers.get("x-timezone-offset", "0"),
         })
 
+    trip_data["trip_id"] = chat_request.trip_id
+    trip_data["feature_flags"] = {
+        "graph_supervisor": settings.ff_enable_graph_supervisor,
+        "graph_compare_legacy": settings.ff_compare_graph_with_legacy,
+    }
+
     # ── 2. Merge profile preferences from the frontend ───────────────────────
     # The frontend sends trip_context.preferences built from the user's profile
     # (budget, mood, travel style, food preferences, etc.).  We merge them so
@@ -175,6 +183,7 @@ async def stream_chat(
         existing_prefs = trip_data.get("preferences") or {}
         # Existing trip-level prefs are more specific → they win on conflict
         trip_data["preferences"] = {**incoming_prefs, **existing_prefs}
+        trip_data["profile_preferences"] = incoming_prefs
         trip_data.setdefault("timezone_id", request.headers.get("x-timezone-id", "UTC"))
 
     # ── 3. Save the user message immediately ─────────────────────────────────
@@ -223,112 +232,50 @@ async def stream_chat(
         """Stream events from the MCP Orchestrator."""
         collected_preferences: Dict[str, Any] = {}
         itinerary_data: Dict[str, Any] | None = None
+        route_plan_data: Dict[str, Any] | None = None
+        destination_experience_data: Dict[str, Any] | None = None
+        cost_model_data: Dict[str, Any] | None = None
         trip_state: str | None = None
         assistant_tokens: list[str] = []   # accumulate for persistence
 
         try:
             orchestrator = _get_orchestrator_or_503()
+            # Emit trip_id immediately so the client can keep continuity
+            # even if the stream fails before a terminal "done" event.
+            yield f"data: {json.dumps({'type': 'status', 'agent': 'System', 'status': 'Connected', 'trip_id': chat_request.trip_id})}\n\n"
             async for event in orchestrator.process(
                 user_id=user_id,
                 message=chat_request.message,
                 trip_context=trip_data,
                 conversation_history=history,
             ):
+                event.setdefault("trip_id", chat_request.trip_id)
                 # ── Collect assistant response tokens ─────────────────────
                 if event.get("type") == "token" and event.get("content"):
                     assistant_tokens.append(event["content"])
 
-                # ── Persist preferences IMMEDIATELY (avoids context loss) ──
+                # ── Collect data locally to persist atomically at the end ──
                 if event.get("type") == "data":
                     dt = event.get("data_type")
                     if dt == "preferences" and event.get("data"):
                         collected_preferences = event["data"]
-                        try:
-                            existing_doc = await db.trips.find_one(
-                                {"trip_id": chat_request.trip_id}, {"preferences": 1}
-                            ) or {}
-                            existing_prefs = existing_doc.get("preferences") or {}
-                            merged_prefs = {**existing_prefs, **collected_preferences}
-                            await db.trips.update_one(
-                                {"trip_id": chat_request.trip_id, "user_id": user_id},
-                                {"$set": {
-                                    "preferences": merged_prefs,
-                                    "updated_at": datetime.now(timezone.utc),
-                                }},
-                            )
-                        except Exception as exc:
-                            logger.warning("Preference save failed: %s", exc)
                     elif dt == "trip_state" and event.get("data"):
-                        # Persist the phase transition so next turn restores it
                         trip_state = event["data"].get("state")
-                        try:
-                            await db.trips.update_one(
-                                {"trip_id": chat_request.trip_id, "user_id": user_id},
-                                {"$set": {
-                                    "trip_state": trip_state,
-                                    "updated_at": datetime.now(timezone.utc),
-                                }},
-                            )
-                        except Exception as exc:
-                            logger.warning("State save failed: %s", exc)
                     elif dt == "itinerary" and event.get("data"):
                         itinerary_data = event["data"]
+                    elif dt == "route_plan" and event.get("data"):
+                        route_plan_data = event["data"]
+                    elif dt == "destination_experience_plan" and event.get("data"):
+                        destination_experience_data = event["data"]
+                    elif dt == "cost_model" and event.get("data"):
+                        cost_model_data = event["data"]
 
-                # On done: persist itinerary + assistant message in background
                 if event.get("type") == "done":
                     event["trip_id"] = chat_request.trip_id
-                    final_state = event.get("trip_state") or trip_state
-                    full_assistant_response = "".join(assistant_tokens)
-
-                    async def _save_turn(
-                        trip_id=chat_request.trip_id,
-                        uid=user_id,
-                        itin=itinerary_data,
-                        state=final_state,
-                        assistant_msg=full_assistant_response,
-                    ):
-                        try:
-                            done_now = datetime.now(timezone.utc)
-                            # Save assistant message
-                            if assistant_msg:
-                                await db.messages.insert_one({
-                                    "trip_id": trip_id,
-                                    "user_id": uid,
-                                    "role": "assistant",
-                                    "content": assistant_msg,
-                                    "created_at": done_now,
-                                    "last_accessed_at": done_now,
-                                })
-
-                            # Save itinerary to trip document
-                            if itin:
-                                fields = {
-                                    "itinerary": itin,
-                                    "is_trip": True,
-                                    "status": "planned",
-                                    "updated_at": done_now,
-                                }
-                                if state:
-                                    fields["trip_state"] = state
-
-                                # ── Generate creative AI title ──────────────
-                                fields["title"] = await _generate_trip_title(itin, trip_data.get("preferences", {}))
-
-                                await db.trips.update_one(
-                                    {"trip_id": trip_id, "user_id": uid},
-                                    {"$set": fields},
-                                )
-
-                            else:
-                                # Still update timestamp even without itinerary
-                                await db.trips.update_one(
-                                    {"trip_id": trip_id, "user_id": uid},
-                                    {"$set": {"updated_at": done_now}},
-                                )
-                        except Exception as exc:
-                            logger.warning("Turn save failed: %s", exc)
-
-                    background_tasks.add_task(_save_turn)
+                    if event.get("trip_state") and not trip_state:
+                        trip_state = event.get("trip_state")
+                    if event.get("preferences") and not collected_preferences:
+                        collected_preferences = event.get("preferences")
 
                 yield f"data: {json.dumps(event)}\n\n"
 
@@ -336,12 +283,90 @@ async def stream_chat(
                     break
 
         except asyncio.CancelledError:
-            yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'cancelled', 'message': 'Request cancelled.', 'trip_id': chat_request.trip_id})}\n\n"
         except Exception as e:
             logger.error(
                 "Orchestrator stream error for user %s: %s", user_id, e, exc_info=True
             )
-            yield f"data: {json.dumps({'type': 'error', 'error': 'Sorry, I hit a temporary issue while planning your trip. Please try again.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'error': 'Sorry, I hit a temporary issue while planning your trip. Please try again.', 'trip_id': chat_request.trip_id})}\n\n"
+        finally:
+            # ── Atomic background save ──────────────────────────────────────────
+            # Run this as an independent asyncio task so it persists even if 
+            # the client disconnects or the generator is cancelled.
+            full_assistant_response = "".join(assistant_tokens)
+            
+            async def _save_turn_background(
+                trip_id=chat_request.trip_id,
+                uid=user_id,
+                itin=itinerary_data,
+                route_plan=route_plan_data,
+                destination_experience_plan=destination_experience_data,
+                cost_model=cost_model_data,
+                state=trip_state,
+                prefs=collected_preferences,
+                assistant_msg=full_assistant_response,
+            ):
+                try:
+                    done_now = datetime.now(timezone.utc)
+                    # Save assistant message
+                    if assistant_msg:
+                        await db.messages.insert_one({
+                            "trip_id": trip_id,
+                            "user_id": uid,
+                            "role": "assistant",
+                            "content": assistant_msg,
+                            "created_at": done_now,
+                            "last_accessed_at": done_now,
+                        })
+
+                    # Prepare fields to update atomically on the trip document
+                    fields: Dict[str, Any] = {"updated_at": done_now}
+                    
+                    if itin:
+                        fields["itinerary"] = itin
+                        fields["is_trip"] = True
+                        fields["status"] = "planned"
+                        fields["title"] = await _generate_trip_title(itin, trip_data.get("preferences", {}))
+
+                    if route_plan:
+                        fields["route_plan"] = route_plan
+
+                    if destination_experience_plan:
+                        fields["destination_experience_plan"] = destination_experience_plan
+
+                    if cost_model:
+                        fields["cost_model"] = cost_model
+                    
+                    if state:
+                        fields["trip_state"] = state
+                        
+                    if prefs:
+                        existing_doc = await db.trips.find_one({"trip_id": trip_id}, {"preferences": 1}) or {}
+                        existing_prefs = existing_doc.get("preferences") or {}
+                        fields["preferences"] = {**existing_prefs, **prefs}
+
+                    await db.trips.update_one(
+                        {"trip_id": trip_id, "user_id": uid},
+                        {"$set": fields},
+                    )
+                    
+                    # ---- Extract Long-Term Memory ----
+                    if assistant_msg:
+                        try:
+                            extractor = MemoryExtractorAgent()
+                            turn_history = history[-10:] + [{"role": "user", "content": chat_request.message}, {"role": "assistant", "content": assistant_msg}]
+                            await extractor.extract_and_store(
+                                user_id=uid,
+                                recent_history=turn_history,
+                                current_preferences=fields.get("preferences", {})
+                            )
+                        except Exception as extractor_exc:
+                            logger.error(f"Background memory extraction failed: {extractor_exc}")
+
+                except Exception as exc:
+                    logger.warning("Turn save failed: %s", exc)
+                    
+            asyncio.create_task(_save_turn_background())
 
 
     async def merged_generator() -> AsyncGenerator[str, None]:

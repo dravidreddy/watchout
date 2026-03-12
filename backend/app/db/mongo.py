@@ -44,8 +44,7 @@ class MongoDB:
             
         except Exception as e:
             logger.error("Failed to connect to MongoDB: %s", e)
-            import sys
-            sys.exit(1)
+            raise RuntimeError("Failed to connect to MongoDB") from e
     
     @classmethod
     async def disconnect(cls) -> None:
@@ -112,10 +111,26 @@ class MongoDB:
         
         # Places cache with TTL (expires after 24 hours)
         await cls.db.places_cache.create_index("place_id", unique=True)
+        await cls.db.places_cache.create_index("query_key", unique=True, sparse=True)
         await cls.db.places_cache.create_index(
             "cached_at",
             expireAfterSeconds=86400  # 24 hours
         )
+        
+        # Mapbox route cache with TTL (expires after 30 days = 2592000s)
+        await cls.db.mapbox_cache.create_index("route_key", unique=True, sparse=True)
+        await cls.db.mapbox_cache.create_index(
+            "cached_at",
+            expireAfterSeconds=2592000  # 30 days
+        )
+
+        # Graph runtime trace collections
+        await cls.db.agent_runs.create_index([("trip_id", 1), ("created_at", -1)])
+        await cls.db.agent_runs.create_index([("user_id", 1), ("created_at", -1)])
+        await cls.db.agent_runs.create_index("request_id")
+
+        await cls.db.trip_evidence.create_index([("trip_id", 1), ("created_at", -1)])
+        await cls.db.trip_evidence.create_index("evidence_id", unique=True)
         
         # Payments collection
         await cls.db.payments.create_index("user_id")
@@ -179,6 +194,21 @@ def memories_collection():
 def places_cache_collection():
     """Get places cache collection."""
     return MongoDB.get_collection("places_cache")
+
+
+def mapbox_cache_collection():
+    """Get mapbox cache collection."""
+    return MongoDB.get_collection("mapbox_cache")
+
+
+def agent_runs_collection():
+    """Get graph agent run trace collection."""
+    return MongoDB.get_collection("agent_runs")
+
+
+def trip_evidence_collection():
+    """Get graph evidence collection."""
+    return MongoDB.get_collection("trip_evidence")
 
 
 def payments_collection():

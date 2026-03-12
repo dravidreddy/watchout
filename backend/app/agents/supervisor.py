@@ -324,226 +324,198 @@ class SupervisorAgent(BaseAgent):
                 yield {"type": "cancelled", "message": "Cancelled."}
                 return
 
-            # 2) Orchestration planning (LLM)
-            yield {
-                "type": "status",
-                "agent": "Supervisor",
-                "status": "Thinking about the best next step… ✨",
-            }
-            plan = await self._plan_orchestration(
-                message=message,
-                preferences=preferences,
-                memories=memories,
-                conversation_history=conversation_history,
-                timezone_id=trip_context.get("timezone_id", "UTC")
-            )
+            # ══════════════════════════════════════════════════════════════
+            # ReAct-style iterative orchestration loop
+            # The planner runs up to max_loops times.  Each iteration:
+            #   1. Plans which agents to run next (considering prior results)
+            #   2. Executes the planned agents
+            #   3. Loops back so the planner can evaluate and decide next step
+            # ══════════════════════════════════════════════════════════════
+            all_results: Dict[str, Dict[str, Any]] = {}
+            degraded_agents: list = []
+            weather_data = None
+            itinerary_data = None
+            max_loops = 3
+            loop_count = 0
 
-            if await _is_cancelled():
-                yield {"type": "cancelled", "message": "Cancelled."}
-                return
+            while loop_count < max_loops:
+                loop_count += 1
 
-            intent = plan.get("intent", "clarify")
-            agents = plan.get("agents", [])
-            parallel = bool(plan.get("parallel", False))
-            missing_fields = plan.get("missing_fields", [])
+                if await _is_cancelled():
+                    yield {"type": "cancelled", "message": "Cancelled."}
+                    return
 
-            # 3) Smalltalk: respond directly (no agents)
-            if intent == "smalltalk":
-                async for t in self._stream_smalltalk_response(message, preferences):
-                    yield {"type": "token", "content": t}
-                yield {"type": "done", "is_complete": True}
-                return
-
-            # 4) Clarification: run clarification agent (stream)
-            if intent == "clarify" or "clarification" in agents:
-                yield {
-                    "type": "tool_start",
-                    "tool": "clarification",
-                }
+                # ── Plan next step ────────────────────────────────────────
                 yield {
                     "type": "status",
-                    "agent": "Clarification",
-                    "status": "Quickly understanding your trip… 🧳",
+                    "agent": "Supervisor",
+                    "status": "Thinking about the best next step… ✨" if loop_count == 1 else "Evaluating progress and deciding next step… 🔄",
                 }
 
-                # Clarification agent should return:
-                # {
-                #   "assistant_message": "...",
-                #   "preferences": {...},
-                #   "missing_fields": [...],
-                #   "is_complete": bool
-                # }
-                result = await self.agents["clarification"].run(
-                    message,
-                    {
-                        "preferences": preferences,
-                        "memories": memories,
-                        "conversation_history": conversation_history,
-                        "missing_fields": missing_fields,
-                        "timezone_id": trip_context.get("timezone_id", "UTC")
-                    },
-                )
+                # Build a summary of agent outputs so far for the planner
+                prior_outputs_text = self._format_agent_outputs_for_weaver(
+                    {k: v for k, v in all_results.items() if k != "clarification"}
+                ) if all_results else ""
 
-                yield {"type": "tool_end", "tool": "clarification"}
-
-                assistant_message = result.get("assistant_message") or result.get("response") or ""
-                new_preferences = result.get("preferences") or result.get("extracted_preferences") or {}
-                is_complete = bool(result.get("is_complete", False))
-                new_missing = result.get("missing_fields", [])
-                onboarding_phase = result.get("onboarding_phase", "phase_1_intake")
-                destination_suggestions = result.get("destination_suggestions") or []
-
-                # Update merged preferences
-                merged_preferences = {**preferences, **(new_preferences or {})}
-
-                # Stream the clarification message
-                async for chunk in self._stream_text(assistant_message):
-                    if cancel_event.is_set():
-                        yield {"type": "cancelled", "message": "Cancelled."}
-                        return
-                    yield {"type": "token", "content": chunk}
-
-                # Send structured preferences update
-                yield {
-                    "type": "data",
-                    "data_type": "preferences",
-                    "data": merged_preferences,
-                }
-                yield {
-                    "type": "data",
-                    "data_type": "missing_fields",
-                    "data": new_missing,
-                }
-                # Emit destination suggestions as a separate data event (for card rendering)
-                if destination_suggestions:
-                    yield {
-                        "type": "data",
-                        "data_type": "destination_suggestions",
-                        "data": destination_suggestions,
-                    }
-                # Emit onboarding phase so frontend can track funnel progress
-                yield {
-                    "type": "data",
-                    "data_type": "onboarding_phase",
-                    "data": {"phase": onboarding_phase},
-                }
-
-                # Phase 4: When all requirements are complete, emit a confirmation
-                # card instead of immediately generating the itinerary.
-                # The frontend renders a verification card, and the user's next
-                # message ("yes" / "looks good" / etc.) triggers intent==plan.
-                if is_complete:
-                    yield {
-                        "type": "data",
-                        "data_type": "confirmation_required",
-                        "data": merged_preferences,
-                    }
-
-                yield {"type": "done", "is_complete": is_complete}
-                return
-
-            # 5) Planning pipeline (itinerary first, then parallel)
-            # Ensure itinerary runs first if requested (after weather)
-            if "itinerary" not in agents:
-                agents = ["itinerary"] + agents
-
-            # Remove invalid agents
-            agents = [a for a in agents if a in ALLOWED_AGENTS and a != "clarification"]
-            
-            all_results: Dict[str, Dict[str, Any]] = {}
-
-            # AR8: Run weather before itinerary to provide weather context
-            weather_data = None
-            if "weather" in agents:
-                yield {"type": "status", "agent": "Supervisor", "status": "Checking forecasts for your destinations… ☁️"}
-                weather_res = await self._run_agent_with_events(
-                    agent_name="weather",
+                plan = await self._plan_orchestration(
                     message=message,
                     preferences=preferences,
                     memories=memories,
                     conversation_history=conversation_history,
-                    cancel_event=cancel_event,
-                    timezone_id=trip_context.get("timezone_id", "UTC")
+                    timezone_id=trip_context.get("timezone_id", "UTC"),
+                    agent_outputs=prior_outputs_text,
                 )
-                all_results["weather"] = weather_res
-                weather_data = weather_res.get("data")
-                agents.remove("weather")
 
-            # Run itinerary first (dependency)
-            yield {"type": "status", "agent": "Supervisor", "status": "Building your trip plan… 🗺️"}
-            itinerary_result = await self._run_agent_with_events(
-                agent_name="itinerary",
-                message=message,
-                preferences=preferences,
-                memories=memories,
-                conversation_history=conversation_history,
-                cancel_event=cancel_event,
-                weather_data=weather_data,
-                timezone_id=trip_context.get("timezone_id", "UTC")
-            )
+                if await _is_cancelled():
+                    yield {"type": "cancelled", "message": "Cancelled."}
+                    return
 
-            if await _is_cancelled():
-                yield {"type": "cancelled", "message": "Cancelled."}
-                return
+                intent = plan.get("intent", "clarify")
+                agents = plan.get("agents", [])
+                parallel = bool(plan.get("parallel", False))
+                missing_fields = plan.get("missing_fields", [])
 
-            # Collect structured data
-            all_results["itinerary"] = itinerary_result
-            itinerary_data = itinerary_result.get("data", {}) or itinerary_result
-            
-            # AR7: Run Reviewer/Critic Agent on the generated itinerary
-            if itinerary_data and not itinerary_result.get("error"):
-                yield {"type": "status", "agent": "Reviewer", "status": "Validating itinerary constraints… 🔍"}
-                from app.agents.reviewer import ReviewerAgent
-                reviewer = ReviewerAgent()
-                review_result = await reviewer.review_itinerary(itinerary_data)
-                
-                if not review_result.get("is_feasible", True):
-                    logger.warning("Itinerary failed validation: %s", review_result.get("issues"))
-                    # Append warning to itinerary_data so it is surfaced
-                    itinerary_data["reviewer_warnings"] = review_result.get("issues", [])
-                    # The planner can now weave these warnings in or the UI can show them
+                # ── Smalltalk ─────────────────────────────────────────────
+                if intent == "smalltalk":
+                    if loop_count == 1:
+                        async for t in self._stream_smalltalk_response(message, preferences):
+                            yield {"type": "token", "content": t}
+                        yield {"type": "done", "is_complete": True}
+                        return
+                    else:
+                        break  # fall through to weave whatever we have
+
+                # ── Clarification ─────────────────────────────────────────
+                if (intent == "clarify" or "clarification" in agents) and "clarification" not in all_results:
+                    yield {"type": "tool_start", "tool": "clarification"}
                     yield {
                         "type": "status",
-                        "agent": "Reviewer",
-                        "status": "Found some impractical timings. Adjusting recommendations… ⚠️"
+                        "agent": "Clarification",
+                        "status": "Quickly understanding your trip… 🧳",
                     }
 
-            # AR5: Track degraded agents so we can alert the user
-            degraded_agents = []
-            if itinerary_result.get("error"):
-                degraded_agents.append("itinerary")
+                    result = await self.agents["clarification"].run(
+                        message,
+                        {
+                            "preferences": preferences,
+                            "memories": memories,
+                            "conversation_history": conversation_history,
+                            "missing_fields": missing_fields,
+                            "timezone_id": trip_context.get("timezone_id", "UTC"),
+                        },
+                    )
+                    yield {"type": "tool_end", "tool": "clarification"}
+                    all_results["clarification"] = result
 
-            # Decide dependent agents
-            remaining_agents = [a for a in agents if a != "itinerary"]
+                    assistant_message = result.get("assistant_message") or result.get("response") or ""
+                    new_preferences = result.get("preferences") or result.get("extracted_preferences") or {}
+                    is_complete = bool(result.get("is_complete", False))
+                    new_missing = result.get("missing_fields", [])
+                    onboarding_phase = result.get("onboarding_phase", "phase_1_intake")
+                    destination_suggestions = result.get("destination_suggestions") or []
 
-            # If itinerary has cities/days, we can run other agents
-            if remaining_agents:
-                if parallel:
-                    yield {
-                        "type": "status",
-                        "agent": "Supervisor",
-                        "status": "Now I’ll fetch routes, stays, food & weather in parallel… ⚡",
-                    }
-                    parallel_results = await self._run_agents_parallel(
-                        agent_names=remaining_agents,
+                    merged_preferences = {**preferences, **(new_preferences or {})}
+
+                    async for chunk in self._stream_text(assistant_message):
+                        if cancel_event.is_set():
+                            yield {"type": "cancelled", "message": "Cancelled."}
+                            return
+                        yield {"type": "token", "content": chunk}
+
+                    yield {"type": "data", "data_type": "preferences", "data": merged_preferences}
+                    yield {"type": "data", "data_type": "missing_fields", "data": new_missing}
+                    if destination_suggestions:
+                        yield {"type": "data", "data_type": "destination_suggestions", "data": destination_suggestions}
+                    yield {"type": "data", "data_type": "onboarding_phase", "data": {"phase": onboarding_phase}}
+
+                    if is_complete:
+                        yield {"type": "data", "data_type": "confirmation_required", "data": merged_preferences}
+
+                    yield {"type": "done", "is_complete": is_complete}
+                    return
+
+                # ── Agent execution ───────────────────────────────────────
+                # Only run agents that haven't been executed yet
+                pending = [a for a in agents if a in ALLOWED_AGENTS and a not in all_results and a != "clarification"]
+
+                # Ensure itinerary is present when planning
+                if intent in ("plan", "refine") and "itinerary" not in pending and "itinerary" not in all_results:
+                    pending.insert(0, "itinerary")
+
+                if not pending:
+                    break  # nothing new to run → weave and finish
+
+                # ── Weather (dependency for itinerary) ────────────────────
+                if "weather" in pending:
+                    yield {"type": "status", "agent": "Supervisor", "status": "Checking forecasts for your destinations… ☁️"}
+                    weather_res = await self._run_agent_with_events(
+                        agent_name="weather",
                         message=message,
                         preferences=preferences,
                         memories=memories,
                         conversation_history=conversation_history,
                         cancel_event=cancel_event,
-                        itinerary_data=itinerary_data,
-                        weather_data=weather_data,
-                        timezone_id=trip_context.get("timezone_id", "UTC")
+                        timezone_id=trip_context.get("timezone_id", "UTC"),
                     )
-                    all_results.update(parallel_results)
-                    # AR5: collect failed parallel agents
-                    for a, r in parallel_results.items():
-                        if isinstance(r, dict) and r.get("error"):
-                            degraded_agents.append(a)
-                else:
-                    for agent_name in remaining_agents:
-                        res = await self._run_agent_with_events(
-                            agent_name=agent_name,
+                    all_results["weather"] = weather_res
+                    weather_data = weather_res.get("data")
+                    pending.remove("weather")
+                    if weather_res.get("error"):
+                        degraded_agents.append("weather")
+
+                # ── Itinerary (must run before stays/food/route) ──────────
+                if "itinerary" in pending:
+                    yield {"type": "status", "agent": "Supervisor", "status": "Building your trip plan… 🗺️"}
+                    itinerary_result = await self._run_agent_with_events(
+                        agent_name="itinerary",
+                        message=message,
+                        preferences=preferences,
+                        memories=memories,
+                        conversation_history=conversation_history,
+                        cancel_event=cancel_event,
+                        weather_data=weather_data,
+                        timezone_id=trip_context.get("timezone_id", "UTC"),
+                    )
+
+                    if await _is_cancelled():
+                        yield {"type": "cancelled", "message": "Cancelled."}
+                        return
+
+                    all_results["itinerary"] = itinerary_result
+                    itinerary_data = itinerary_result.get("data", {}) or itinerary_result
+                    pending.remove("itinerary")
+
+                    if itinerary_result.get("error"):
+                        degraded_agents.append("itinerary")
+                        # Loop back so the planner sees the failure and can adjust
+                        continue
+
+                    # AR7: Reviewer validation
+                    if itinerary_data and not itinerary_result.get("error"):
+                        yield {"type": "status", "agent": "Reviewer", "status": "Validating itinerary constraints… 🔍"}
+                        from app.agents.reviewer import ReviewerAgent
+                        reviewer = ReviewerAgent()
+                        review_result = await reviewer.review_itinerary(itinerary_data)
+
+                        if not review_result.get("is_feasible", True):
+                            logger.warning("Itinerary failed validation: %s", review_result.get("issues"))
+                            itinerary_data["reviewer_warnings"] = review_result.get("issues", [])
+                            yield {
+                                "type": "status",
+                                "agent": "Reviewer",
+                                "status": "Found some impractical timings. Adjusting recommendations… ⚠️",
+                            }
+
+                # ── Remaining agents (stays, food, route, transport) ──────
+                if pending:
+                    if parallel:
+                        yield {
+                            "type": "status",
+                            "agent": "Supervisor",
+                            "status": "Now I'll fetch routes, stays, food & weather in parallel… ⚡",
+                        }
+                        parallel_results = await self._run_agents_parallel(
+                            agent_names=pending,
                             message=message,
                             preferences=preferences,
                             memories=memories,
@@ -551,18 +523,40 @@ class SupervisorAgent(BaseAgent):
                             cancel_event=cancel_event,
                             itinerary_data=itinerary_data,
                             weather_data=weather_data,
-                            timezone_id=trip_context.get("timezone_id", "UTC")
+                            timezone_id=trip_context.get("timezone_id", "UTC"),
                         )
-                        all_results[agent_name] = res
-                        # AR5: collect failed sequential agents
-                        if isinstance(res, dict) and res.get("error"):
-                            degraded_agents.append(agent_name)
+                        all_results.update(parallel_results)
+                        for a, r in parallel_results.items():
+                            if isinstance(r, dict) and r.get("error"):
+                                degraded_agents.append(a)
+                    else:
+                        for agent_name in pending:
+                            res = await self._run_agent_with_events(
+                                agent_name=agent_name,
+                                message=message,
+                                preferences=preferences,
+                                memories=memories,
+                                conversation_history=conversation_history,
+                                cancel_event=cancel_event,
+                                itinerary_data=itinerary_data,
+                                weather_data=weather_data,
+                                timezone_id=trip_context.get("timezone_id", "UTC"),
+                            )
+                            all_results[agent_name] = res
+                            if isinstance(res, dict) and res.get("error"):
+                                degraded_agents.append(agent_name)
+
+                # After executing this batch, loop back so the planner can
+                # evaluate results and decide if more work is needed.
+                # (In practice, most trips finish in 1 iteration.)
+
+            # ── End of ReAct loop ─────────────────────────────────────────
 
             if await _is_cancelled():
                 yield {"type": "cancelled", "message": "Cancelled."}
                 return
 
-            # AR5: Surface partial failures before streaming the woven response
+            # AR5: Surface partial failures
             if degraded_agents:
                 logger.warning("Degraded agents in this request: %s", degraded_agents)
                 yield {
@@ -575,7 +569,7 @@ class SupervisorAgent(BaseAgent):
                     ),
                 }
 
-            # 6) Weave final response (stream)
+            # ── Weave final response ──────────────────────────────────────
             yield {"type": "status", "agent": "Supervisor", "status": "Putting everything together… 🧾"}
 
             agent_responses_text = self._format_agent_outputs_for_weaver(all_results)
@@ -585,14 +579,15 @@ class SupervisorAgent(BaseAgent):
                 preferences=preferences,
                 conversation_history=conversation_history,
                 agent_outputs=agent_responses_text,
-                timezone_id=trip_context.get("timezone_id", "UTC")
+                degraded_agents=degraded_agents,
+                timezone_id=trip_context.get("timezone_id", "UTC"),
             ):
                 if await _is_cancelled():
                     yield {"type": "cancelled", "message": "Cancelled."}
                     return
                 yield {"type": "token", "content": token}
 
-            # 7) Emit structured data per agent (for UI rendering)
+            # ── Emit structured data per agent (for UI rendering) ─────────
             for agent_name, result in all_results.items():
                 data = result.get("data") if isinstance(result, dict) else None
                 if data:
@@ -714,7 +709,8 @@ class SupervisorAgent(BaseAgent):
         preferences: Dict[str, Any],
         memories: List[Dict[str, Any]],
         conversation_history: List[Dict[str, Any]],
-        timezone_id: str = "UTC"
+        timezone_id: str = "UTC",
+        agent_outputs: str = "",
     ) -> Dict[str, Any]:
         """
         Uses LLM to decide:
@@ -742,6 +738,7 @@ class SupervisorAgent(BaseAgent):
             message=self._sanitize_for_prompt(message),
             preferences=preferences,
             memories=memories,
+            agent_outputs=agent_outputs,
         )
 
         schema = {
@@ -839,6 +836,7 @@ class SupervisorAgent(BaseAgent):
         preferences: Dict[str, Any],
         conversation_history: List[Dict[str, Any]],
         agent_outputs: str,
+        degraded_agents: List[str] = None,
         timezone_id: str = "UTC"
     ) -> AsyncGenerator[str, None]:
         """
@@ -867,6 +865,7 @@ class SupervisorAgent(BaseAgent):
             user_message=self._sanitize_for_prompt(user_message),
             preferences=preferences,
             agent_outputs=agent_outputs,
+            degraded_agents=degraded_agents,
         )
 
         try:

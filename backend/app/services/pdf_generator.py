@@ -1,8 +1,6 @@
 from playwright.async_api import async_playwright
-import asyncio
-import os
 from datetime import datetime, timezone
-from jinja2 import Template
+from jinja2 import Environment, select_autoescape
 
 PDF_TEMPLATE = """
 <!DOCTYPE html>
@@ -35,11 +33,12 @@ PDF_TEMPLATE = """
     </div>
 
     {% for day in itinerary.days %}
+    {% set day_activities = day.activities if day.activities is defined else day.stops %}
     <div class="day">
         <div class="day-header">Day {{ day.day_number }}: {{ day.city }}</div>
-        {% for activity in day.activities %}
+        {% for activity in day_activities %}
         <div class="activity">
-            <div class="activity-time">{{ activity.time }}</div>
+            <div class="activity-time">{{ activity.time or activity.arrival_time or '' }}</div>
             <div class="activity-name">{{ activity.name }}</div>
             <div class="activity-desc">{{ activity.description }}</div>
         </div>
@@ -58,8 +57,11 @@ class PDFGenerator:
     @staticmethod
     async def generate_itinerary_pdf(trip_data: dict) -> bytes:
         """Generate a PDF from trip itinerary data."""
-        template = Template(PDF_TEMPLATE)
-        html_content = template._render({
+        # Auto-escape dynamic values to prevent HTML/script injection from itinerary text.
+        template = Environment(
+            autoescape=select_autoescape(default=True),
+        ).from_string(PDF_TEMPLATE)
+        html_content = template.render({
             **trip_data,
             "current_year": datetime.now(timezone.utc).year
         })

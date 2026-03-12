@@ -97,6 +97,7 @@ export default function ChatPage() {
     useEffect(() => {
         const isNew = searchParams.get('new') === 'true';
         const urlTripId = searchParams.get('trip_id');
+        const queryParam = searchParams.get('q');
 
         if (isNew) {
             isExplicitNewChat.current = true;
@@ -113,6 +114,14 @@ export default function ChatPage() {
 
             // Remove the query param from the URL without triggering a reload
             router.replace('/chat');
+        } else if (queryParam && messages.length === 0) {
+            // Auto-send the query from the home search bar (C6)
+            isExplicitNewChat.current = true;
+            setShowChatHistory(false);
+            setInput(queryParam);
+            router.replace('/chat');
+            const t = setTimeout(() => sendMessage(queryParam), 400);
+            return () => clearTimeout(t);
         } else if (urlTripId && urlTripId !== activeTripId) {
             // User navigated directly to a specific chat
             handleSelectConversation(urlTripId).then(() => {

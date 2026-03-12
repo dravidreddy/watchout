@@ -54,7 +54,6 @@ export function useDragResize({
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
         window.removeEventListener('mousemove', onMouseMove);
-        window.removeEventListener('mouseup', onMouseUp);
     }, [onMouseMove]);
 
     const onMouseDown = useCallback(
@@ -66,7 +65,7 @@ export function useDragResize({
             document.body.style.cursor = 'col-resize';
             document.body.style.userSelect = 'none';
             window.addEventListener('mousemove', onMouseMove);
-            window.addEventListener('mouseup', onMouseUp);
+            window.addEventListener('mouseup', onMouseUp, { once: true });
         },
         [panelWidth, onMouseMove, onMouseUp],
     );

@@ -154,6 +154,7 @@ export const ItineraryPreview: React.FC<ItineraryPreviewProps> = ({
                     <div
                         key={day.day_number || idx}
                         className="stagger-item"
+                        data-testid={`itinerary-card-${day.day_number || idx + 1}`}
                     >
                         <div className="flex items-center gap-3 mb-4">
                             <div

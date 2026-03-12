@@ -25,7 +25,7 @@ export const useAuthStore = create<AuthState>()(
         }),
         {
             name: 'auth-storage',
-            partialize: (state) => ({ user: state.user })
+            partialize: (state) => ({ user: state.user, isAuthenticated: state.isAuthenticated })
         }
     )
 );
@@ -41,6 +41,11 @@ interface ChatState {
     isUploadingImage: boolean;
     extractedLocation: string | null;
     isVerifyingLocation: boolean;
+    // Route map state
+    routeData: RouteData | null;
+    routeStops: RouteStop[];
+    selectedDay: number;
+    showMap: boolean;
     addMessage: (message: ChatMessage) => void;
     appendToLastMessage: (content: string) => void;
     setStreaming: (streaming: boolean) => void;
@@ -54,6 +59,36 @@ interface ChatState {
     setUploadingImage: (isUploading: boolean) => void;
     setExtractedLocation: (location: string | null) => void;
     setVerifyingLocation: (isVerifying: boolean) => void;
+    // Route map actions
+    setRouteData: (data: RouteData | null) => void;
+    setRouteStops: (stops: RouteStop[]) => void;
+    setSelectedDay: (day: number) => void;
+    setShowMap: (show: boolean) => void;
+}
+
+export interface RouteData {
+    geometry: {
+        type: string;
+        coordinates: [number, number][];
+    };
+    legs?: {
+        geometry?: { type: string; coordinates: [number, number][] };
+        duration_minutes?: number;
+        distance_km?: number;
+        mode?: string;
+    }[];
+    duration_minutes?: number;
+    distance_km?: number;
+}
+
+export interface RouteStop {
+    name: string;
+    city?: string;
+    lat: number;
+    lng: number;
+    day?: number;
+    type?: 'origin' | 'destination' | 'pitstop' | 'activity';
+    transportMode?: 'driving' | 'cycling' | 'walking' | 'flight' | 'train' | 'bus';
 }
 
 export interface ChatMessage {
@@ -77,6 +112,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     isUploadingImage: false,
     extractedLocation: null,
     isVerifyingLocation: false,
+    routeData: null,
+    routeStops: [],
+    selectedDay: 0,
+    showMap: false,
 
     setActiveTripId: (activeTripId) => set({ activeTripId }),
 
@@ -126,13 +165,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return { messages };
     }),
 
-    clearMessages: () => set({ messages: [], currentAgent: '', currentStatus: '', extractedItinerary: null, weatherData: null }),
+    clearMessages: () => set({ messages: [], currentAgent: '', currentStatus: '', extractedItinerary: null, weatherData: null, routeData: null, routeStops: [], selectedDay: 0 }),
 
     setUploadingImage: (isUploadingImage) => set({ isUploadingImage }),
 
     setExtractedLocation: (extractedLocation) => set({ extractedLocation }),
 
-    setVerifyingLocation: (isVerifyingLocation) => set({ isVerifyingLocation })
+    setVerifyingLocation: (isVerifyingLocation) => set({ isVerifyingLocation }),
+
+    // Route map actions
+    setRouteData: (routeData) => set({ routeData, showMap: !!routeData }),
+    setRouteStops: (routeStops) => set({ routeStops }),
+    setSelectedDay: (selectedDay) => set({ selectedDay }),
+    setShowMap: (showMap) => set({ showMap }),
 }));
 
 interface TripState {
