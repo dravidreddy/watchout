@@ -1,15 +1,15 @@
 """
 Watchout Backend - Base Agent
-Uses Groq API with two models:
-- Main model (gpt-oss-120b): For reasoning and itinerary generation
-- Fast model (compound-mini): For quick UI tasks and simple operations
+Uses OpenAI API as primary with two models:
+- Main model (gpt-4o): For reasoning and itinerary generation
+- Fast model (gpt-4o-mini): For quick UI tasks and simple operations
+Falls back to Groq (Llama) models if OpenAI is unavailable.
 """
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, AsyncGenerator, Literal, List
 import json
 import logging
 import asyncio
-from groq import Groq, AsyncGroq
 import openai
 from opentelemetry import trace
 
@@ -28,11 +28,10 @@ ModelType = Literal["main", "fast"]
 
 
 class BaseAgent(ABC):
-    """Base class for all AI agents using Groq API."""
+    """Base class for all AI agents using OpenAI API (with Groq fallback)."""
     
-    # Class-level async client (shared across all agents)
-    _async_client: Optional[AsyncGroq] = None
-    _sync_client: Optional[Groq] = None
+    # Class-level clients (shared across all agents)
+    _openai_client: Optional[openai.AsyncClient] = None
     
     def __init__(
         self, 
@@ -53,39 +52,33 @@ class BaseAgent(ABC):
         self.model_type = model_type
     
     @classmethod
-    def get_async_client(cls) -> AsyncGroq:
-        """Get or create the async Groq client."""
-        if cls._async_client is None:
-            cls._async_client = AsyncGroq(api_key=settings.groq_api_key)
-        return cls._async_client
-    
-    @classmethod
-    def get_sync_client(cls) -> Groq:
-        """Get or create the sync Groq client."""
-        if cls._sync_client is None:
-            cls._sync_client = Groq(api_key=settings.groq_api_key)
-        return cls._sync_client
-        
-    @classmethod
-    def get_openai_client(cls) -> openai.AsyncClient:
-        """SC1: Get fallback OpenAI client."""
-        if not hasattr(cls, '_openai_client'):
+    def get_async_client(cls) -> openai.AsyncClient:
+        """Get or create the async OpenAI client (primary)."""
+        if cls._openai_client is None:
             cls._openai_client = openai.AsyncClient(api_key=settings.openai_api_key)
         return cls._openai_client
     
+    @classmethod
+    def get_groq_client(cls):
+        """Get or create the async Groq client (fallback)."""
+        if not hasattr(cls, '_groq_client') or cls._groq_client is None:
+            from groq import AsyncGroq
+            cls._groq_client = AsyncGroq(api_key=settings.groq_api_key)
+        return cls._groq_client
+    
     @property
     def model_name(self) -> str:
-        """Get the model name based on model type."""
+        """Get the primary (OpenAI) model name based on model type."""
         if self.model_type == "main":
-            return settings.groq_main_model
-        return settings.groq_fast_model
+            return settings.openai_main_model
+        return settings.openai_fast_model
         
     @property
     def fallback_model_name(self) -> str:
-        """SC1: Get OpenAI fallback model name."""
+        """Get Groq fallback model name."""
         if self.model_type == "main":
-            return "gpt-4o"
-        return "gpt-4o-mini"
+            return settings.groq_main_model
+        return settings.groq_fast_model
     
     def get_system_prompt(self, context: Optional[Dict[str, Any]] = None) -> str:
         """
@@ -166,22 +159,22 @@ class BaseAgent(ABC):
         """
         pass
     
-    # Hard token caps — prevent runaway generation and protect Groq rate limits
+    # Hard token caps — prevent runaway generation and protect rate limits
     _MAX_TOKENS_STREAM: int = 2048
     _MAX_TOKENS_COMPLETE: int = 4096
     _MAX_TOKENS_STRUCTURED: int = 4096
 
     def _calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
         """
-        OB4: Approximate cost tracking based on Groq pricing (USD).
-        Llama-3.1-8b: $0.05 / 1M prompt, $0.08 / 1M completion
-        Llama-3.3-70b: $0.59 / 1M prompt, $0.79 / 1M completion
+        OB4: Approximate cost tracking based on OpenAI pricing (USD).
+        GPT-4o:      $2.50 / 1M prompt, $10.00 / 1M completion
+        GPT-4o-mini: $0.15 / 1M prompt, $0.60 / 1M completion
         """
         model = self.model_name.lower()
-        if "70b" in model:
-            return (prompt_tokens * 0.59 / 1_000_000) + (completion_tokens * 0.79 / 1_000_000)
-        elif "8b" in model:
-            return (prompt_tokens * 0.05 / 1_000_000) + (completion_tokens * 0.08 / 1_000_000)
+        if "gpt-4o-mini" in model:
+            return (prompt_tokens * 0.15 / 1_000_000) + (completion_tokens * 0.60 / 1_000_000)
+        elif "gpt-4o" in model:
+            return (prompt_tokens * 2.50 / 1_000_000) + (completion_tokens * 10.00 / 1_000_000)
         return 0.0  # Fallback
 
 
@@ -193,13 +186,13 @@ class BaseAgent(ABC):
         json_mode: bool = False
     ) -> str:
         """
-        Send a chat completion request to Groq (with OpenAI fallback).
+        Send a chat completion request to OpenAI (with Groq fallback).
         Always enforces a hard token cap to prevent runaway generation.
         """
         effective_max = min(max_tokens, self._MAX_TOKENS_COMPLETE) if max_tokens else self._MAX_TOKENS_COMPLETE
         
-        # SC1/SC2: Define the primary Groq call
-        async def _call_groq():
+        # Primary OpenAI call
+        async def _call_openai():
             await check_token_cap()
             client = self.get_async_client()
             params = {
@@ -213,7 +206,7 @@ class BaseAgent(ABC):
             
             with tracer.start_as_current_span(f"{self.name}.chat_completion") as span:
                 span.set_attribute("llm.agent", self.name)
-                span.set_attribute("llm.provider", "groq")
+                span.set_attribute("llm.provider", "openai")
                 span.set_attribute("llm.model", self.model_name)
                 
                 response = await client.chat.completions.create(**params)
@@ -233,9 +226,9 @@ class BaseAgent(ABC):
                 self._detect_model_drift(content, expected_type="json" if json_mode else "text")
                 return content
                 
-        # SC1: Define the fallback OpenAI call
-        async def _call_openai():
-            client = self.get_openai_client()
+        # Fallback Groq call
+        async def _call_groq():
+            client = self.get_groq_client()
             params = {
                 "model": self.fallback_model_name,
                 "messages": messages,
@@ -247,7 +240,7 @@ class BaseAgent(ABC):
                 
             with tracer.start_as_current_span(f"{self.name}.chat_completion_fallback") as span:
                 span.set_attribute("llm.agent", self.name)
-                span.set_attribute("llm.provider", "openai")
+                span.set_attribute("llm.provider", "groq")
                 span.set_attribute("llm.model", self.fallback_model_name)
                 
                 response = await client.chat.completions.create(**params)
@@ -259,59 +252,20 @@ class BaseAgent(ABC):
                 return response.choices[0].message.content
 
         try:
-            # Attempt Groq
-            return await _call_groq()
+            # Attempt OpenAI (primary)
+            return await _call_openai()
         except Exception as e:
-            logger.warning("Groq API Error (%s): %s", self.name, e)
+            logger.warning("OpenAI API Error (%s): %s", self.name, e)
             try:
-                # Immediate fallback on Groq 5xx errors even if breaker isn't fully open yet
-                return await _call_openai()
+                # Immediate fallback to Groq on OpenAI errors
+                return await _call_groq()
             except Exception as e2:
-                logger.error("Fallback OpenAI API Error (%s): %s", self.name, e2)
+                logger.error("Fallback Groq API Error (%s): %s", self.name, e2)
                 return ""
-
-        # Honour caller cap but never exceed the class hard limit
-        effective_max = min(max_tokens, self._MAX_TOKENS_COMPLETE) if max_tokens else self._MAX_TOKENS_COMPLETE
-
-        params = {
-            "model": self.model_name,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": effective_max,
-        }
-
-        if json_mode:
-            params["response_format"] = {"type": "json_object"}
-
-        try:
-            with tracer.start_as_current_span(f"{self.name}.chat_completion") as span:
-                span.set_attribute("llm.agent", self.name)
-                span.set_attribute("llm.model", self.model_name)
-                
-                response = await client.chat.completions.create(**params)
-                
-                # OB3/OB4: Track tokens and cost
-                p_tokens = response.usage.prompt_tokens if response.usage else 0
-                c_tokens = response.usage.completion_tokens if response.usage else 0
-                cost = self._calculate_cost(p_tokens, c_tokens)
-                
-                span.set_attribute("llm.usage.prompt_tokens", p_tokens)
-                span.set_attribute("llm.usage.completion_tokens", c_tokens)
-                span.set_attribute("llm.cost.usd", cost)
-                
-                await increment_token_usage(p_tokens, c_tokens)
-                
-                logger.info("Agent %s chat_completion tokens: prompt=%d completion=%d cost=$%.6f", 
-                            self.name, p_tokens, c_tokens, cost)
-                
-                return response.choices[0].message.content
-        except Exception as e:
-            logger.warning("Groq API Error (%s): %s", self.name, e)
-            return ""
 
     async def stream(self, prompt: str) -> AsyncGenerator[str, None]:
         """
-        Stream response tokens from Groq (with OpenAI fallback).
+        Stream response tokens from OpenAI (with Groq fallback).
         Always enforces _MAX_TOKENS_STREAM to cap cost and prevent runaway responses.
         """
         messages = [
@@ -319,13 +273,13 @@ class BaseAgent(ABC):
             {"role": "user", "content": prompt}
         ]
 
-        # SC1/SC2: Primary Groq Stream
-        async def _stream_groq() -> AsyncGenerator[str, None]:
+        # Primary OpenAI Stream
+        async def _stream_openai() -> AsyncGenerator[str, None]:
             await check_token_cap()
             client = self.get_async_client()
             with tracer.start_as_current_span(f"{self.name}.stream") as span:
                 span.set_attribute("llm.agent", self.name)
-                span.set_attribute("llm.provider", "groq")
+                span.set_attribute("llm.provider", "openai")
                 span.set_attribute("llm.model", self.model_name)
                 
                 stream = await client.chat.completions.create(
@@ -344,8 +298,9 @@ class BaseAgent(ABC):
                         full_content.append(content_piece)
                         yield content_piece
                         
-                    if hasattr(chunk, "x_groq") and getattr(chunk.x_groq, "usage", None):
-                        usage = chunk.x_groq.usage
+                    # Track usage from the final chunk
+                    if hasattr(chunk, "usage") and chunk.usage:
+                        usage = chunk.usage
                         cost = self._calculate_cost(usage.prompt_tokens, usage.completion_tokens)
                         span.set_attribute("llm.usage.prompt_tokens", usage.prompt_tokens)
                         span.set_attribute("llm.cost.usd", cost)
@@ -354,12 +309,12 @@ class BaseAgent(ABC):
                         
                 self._detect_model_drift("".join(full_content), expected_type="text")
 
-        # SC1: Fallback OpenAI Stream
-        async def _stream_openai() -> AsyncGenerator[str, None]:
-            client = self.get_openai_client()
+        # Fallback Groq Stream
+        async def _stream_groq() -> AsyncGenerator[str, None]:
+            client = self.get_groq_client()
             with tracer.start_as_current_span(f"{self.name}.stream_fallback") as span:
                 span.set_attribute("llm.agent", self.name)
-                span.set_attribute("llm.provider", "openai")
+                span.set_attribute("llm.provider", "groq")
                 span.set_attribute("llm.model", self.fallback_model_name)
                 
                 stream = await client.chat.completions.create(
@@ -374,17 +329,17 @@ class BaseAgent(ABC):
                     if chunk.choices and chunk.choices[0].delta.content:
                         yield chunk.choices[0].delta.content
 
-        # Execute — stream Groq, fall back to OpenAI on any error
+        # Execute — stream OpenAI, fall back to Groq on any error
         try:
-            async for token in _stream_groq():
+            async for token in _stream_openai():
                 yield token
         except Exception as e:
-            logger.warning("Groq stream error (%s): %s — falling back to OpenAI", self.name, e)
+            logger.warning("OpenAI stream error (%s): %s — falling back to Groq", self.name, e)
             try:
-                async for token in _stream_openai():
+                async for token in _stream_groq():
                     yield token
             except Exception as e2:
-                logger.error("OpenAI stream fallback error (%s): %s", self.name, e2)
+                logger.error("Groq stream fallback error (%s): %s", self.name, e2)
                 yield ""
 
 
@@ -394,7 +349,7 @@ class BaseAgent(ABC):
         schema: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """
-        Generate strict JSON output matching a schema (with OpenAI fallback).
+        Generate strict JSON output matching a schema (with Groq fallback).
         """
         system_prompt = self.get_system_prompt()
         system_prompt += "\n\n" + build_structured_output_suffix(schema)
@@ -404,12 +359,12 @@ class BaseAgent(ABC):
             {"role": "user", "content": prompt}
         ]
 
-        async def _generate_groq() -> str:
+        async def _generate_openai() -> str:
             await check_token_cap()
             client = self.get_async_client()
             with tracer.start_as_current_span(f"{self.name}.generate_structured") as span:
                 span.set_attribute("llm.agent", self.name)
-                span.set_attribute("llm.provider", "groq")
+                span.set_attribute("llm.provider", "openai")
                 
                 response = await client.chat.completions.create(
                     model=self.model_name,
@@ -428,11 +383,11 @@ class BaseAgent(ABC):
                 self._detect_model_drift(content, expected_type="json")
                 return content
                 
-        async def _generate_openai() -> str:
-            client = self.get_openai_client()
+        async def _generate_groq() -> str:
+            client = self.get_groq_client()
             with tracer.start_as_current_span(f"{self.name}.generate_structured_fallback") as span:
                 span.set_attribute("llm.agent", self.name)
-                span.set_attribute("llm.provider", "openai")
+                span.set_attribute("llm.provider", "groq")
                 
                 response = await client.chat.completions.create(
                     model=self.fallback_model_name,
@@ -450,11 +405,11 @@ class BaseAgent(ABC):
 
         # Execute
         try:
-            content = await _generate_groq()
+            content = await _generate_openai()
         except Exception as e:
-            logger.warning("Groq API Error (%s): %s", self.name, e)
+            logger.warning("OpenAI API Error (%s): %s", self.name, e)
             try:
-                content = await _generate_openai()
+                content = await _generate_groq()
             except Exception: return None
 
         if not content:

@@ -3,7 +3,7 @@ Watchout Backend - Google Places API Tool
 """
 import httpx
 from typing import Optional, List, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,14 @@ class GooglePlacesTool:
         cache = places_cache_collection()
         cached = await cache.find_one({"query_key": query_key})
         if cached:
-            return cached.get("results", [])
+            cached_at = cached.get("cached_at")
+            if cached_at:
+                if cached_at.tzinfo is None:
+                    cached_at = cached_at.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) - cached_at < timedelta(hours=24):
+                    results = cached.get("results", [])
+                    if len(results) > 0:
+                        return results
 
         try:
             response = await self.client.get(
@@ -71,23 +78,30 @@ class GooglePlacesTool:
             response.raise_for_status()
             data = response.json()
             if data.get("status") != "OK":
+                logger.warning(f"Google Places textsearch non-OK status: {data.get('status')} - {data.get('error_message', 'No error message')}")
+                if data.get("status") == "ZERO_RESULTS":
+                    return []
                 return []
             
             rs = data.get("results", [])
             # Skip strict filtering if there's only 1 exact result
             parsed_results = self._parse_results(rs, strict_filter=(len(rs) > 1))
             
-            # Cache the results
-            await cache.insert_one({
-                "query_key": query_key,
-                "results": parsed_results,
-                "cached_at": datetime.now(timezone.utc)
-            })
+            # Cache the results ONLY if not empty
+            if len(parsed_results) > 0:
+                await cache.update_one(
+                    {"query_key": query_key},
+                    {"$set": {
+                        "results": parsed_results,
+                        "cached_at": datetime.now(timezone.utc)
+                    }},
+                    upsert=True
+                )
             
             return parsed_results
             
         except Exception as e:
-            logger.warning("Google Places search error: %s", e)
+            logger.error("Google Places search error: %s", e)
             return []
     
     async def search_nearby(
@@ -134,7 +148,14 @@ class GooglePlacesTool:
         cache = places_cache_collection()
         cached = await cache.find_one({"query_key": query_key})
         if cached:
-            return cached.get("results", [])
+            cached_at = cached.get("cached_at")
+            if cached_at:
+                if cached_at.tzinfo is None:
+                    cached_at = cached_at.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) - cached_at < timedelta(hours=24):
+                    results = cached.get("results", [])
+                    if len(results) > 0:
+                        return results
 
         try:
             response = await self.client.get(
@@ -145,22 +166,29 @@ class GooglePlacesTool:
             data = response.json()
             
             if data.get("status") != "OK":
+                logger.warning(f"Google Places nearby search non-OK status: {data.get('status')} - {data.get('error_message', 'No error message')}")
+                if data.get("status") == "ZERO_RESULTS":
+                    return []
                 return []
                 
             rs = data.get("results", [])
             parsed_results = self._parse_results(rs, strict_filter=(len(rs) > 1))
             
-            # Cache the results
-            await cache.insert_one({
-                "query_key": query_key,
-                "results": parsed_results,
-                "cached_at": datetime.now(timezone.utc)
-            })
+            # Cache the results ONLY if not empty
+            if len(parsed_results) > 0:
+                await cache.update_one(
+                    {"query_key": query_key},
+                    {"$set": {
+                        "results": parsed_results,
+                        "cached_at": datetime.now(timezone.utc)
+                    }},
+                    upsert=True
+                )
             
             return parsed_results
             
         except Exception as e:
-            logger.warning("Google Places nearby search error: %s", e)
+            logger.error("Google Places nearby search error: %s", e)
             return []
     
     async def get_place_details(
@@ -263,6 +291,7 @@ class GooglePlacesTool:
             data = response.json()
             
             if data.get("status") != "OK":
+                logger.warning(f"Google Places autocomplete non-OK status: {data.get('status')} - {data.get('error_message', 'No error message')}")
                 return []
             
             return [
@@ -295,9 +324,9 @@ class GooglePlacesTool:
         filtered = []
         for place in results:
             if strict_filter:
-                # Must have at least a bare minimum number of reviews (e.g., 20) to prove it's a real/popular spot
+                # Must have at least a bare minimum number of reviews (e.g., 5) to prove it's a real/popular spot
                 ratings_count = place.get("user_ratings_total", 0)
-                if ratings_count < 20:
+                if ratings_count < 5:
                     continue
                     
                 # Filter out blacklisted typical businesses that map to search areas

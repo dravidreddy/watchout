@@ -39,13 +39,13 @@ def _get_orchestrator_or_503():
 
 
 async def _generate_trip_title(itinerary: dict, preferences: dict) -> str:
-    """Generate a creative, descriptive trip title using Groq LLM.
+    """Generate a creative, descriptive trip title using OpenAI LLM.
 
     Examples:
       "🕉️ Spiritual Sanctuaries of Maharashtra — 10-Day Odyssey"
       "💑 Romantic Rendezvous in Goa — 5 Days of Bliss"
       "🏕️  Wilderness & Waterfalls: Kerala Adventure (7 Days)"
-    Falls back to a template if Groq is unreachable.
+    Falls back to Groq, then to a template if both are unreachable.
     """
     cities = itinerary.get("cities", [])
     num_days = itinerary.get("num_days", "")
@@ -75,12 +75,12 @@ async def _generate_trip_title(itinerary: dict, preferences: dict) -> str:
         fallback = f"{city_str} — {num_days}-Day Exploration"
 
     try:
-        from groq import AsyncGroq
+        import openai
         from app.core.config import settings
-        groq = AsyncGroq(api_key=settings.groq_api_key)
         prompt = build_trip_title_prompt(num_days=num_days, city_str=city_str, vibe=vibe)
-        resp = await groq.chat.completions.create(
-            model="llama-3.1-8b-instant",
+        client = openai.AsyncClient(api_key=settings.openai_api_key)
+        resp = await client.chat.completions.create(
+            model=settings.openai_fast_model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=40,
             temperature=0.85,
@@ -89,7 +89,22 @@ async def _generate_trip_title(itinerary: dict, preferences: dict) -> str:
         if title and len(title) <= 80:
             return title
     except Exception as exc:
-        logger.warning("AI title generation failed, using template: %s", exc)
+        logger.warning("OpenAI title generation failed, trying Groq fallback: %s", exc)
+        try:
+            from groq import AsyncGroq
+            groq = AsyncGroq(api_key=settings.groq_api_key)
+            prompt = build_trip_title_prompt(num_days=num_days, city_str=city_str, vibe=vibe)
+            resp = await groq.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=40,
+                temperature=0.85,
+            )
+            title = resp.choices[0].message.content.strip().strip('"').strip("'")
+            if title and len(title) <= 80:
+                return title
+        except Exception as exc2:
+            logger.warning("Groq fallback title generation also failed: %s", exc2)
 
     return fallback
 

@@ -110,7 +110,7 @@ class MongoDB:
         )
         
         # Places cache with TTL (expires after 24 hours)
-        await cls.db.places_cache.create_index("place_id", unique=True)
+        await cls.db.places_cache.create_index("place_id", unique=True, sparse=True)
         await cls.db.places_cache.create_index("query_key", unique=True, sparse=True)
         await cls.db.places_cache.create_index(
             "cached_at",

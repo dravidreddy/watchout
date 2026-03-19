@@ -1,4 +1,4 @@
-﻿
+
 """
 Watchout Backend - Main FastAPI Application
 """
@@ -71,7 +71,7 @@ def validate_environment():
     # Critical variables required for all environments
     critical_vars = {
         "MONGODB_URI": settings.mongodb_uri,
-        "GROQ_API_KEY": settings.groq_api_key,
+        "OPENAI_API_KEY": settings.openai_api_key,
     }
     # Redis-backed distributed rate limiting is mandatory outside local development.
     if settings.app_env in {"production", "staging"} and not settings.redis_url:
@@ -298,7 +298,24 @@ async def health_check():
             health_status["services"]["redis"] = "error"
             health_status["status"] = "degraded"
 
-    # 3. Check Groq API
+    # 3. Check OpenAI API (primary)
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            res = await client.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {settings.openai_api_key}"}
+            )
+            if res.status_code == 200:
+                health_status["services"]["openai"] = "connected"
+            else:
+                health_status["services"]["openai"] = f"error_{res.status_code}"
+                health_status["status"] = "degraded"
+    except Exception as e:
+        logger.error(f"Healthcheck: OpenAI API check failed: {e}")
+        health_status["services"]["openai"] = "error"
+        health_status["status"] = "degraded"
+
+    # 4. Check Groq API (fallback)
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
             res = await client.get(
@@ -309,11 +326,9 @@ async def health_check():
                 health_status["services"]["groq"] = "connected"
             else:
                 health_status["services"]["groq"] = f"error_{res.status_code}"
-                health_status["status"] = "degraded"
     except Exception as e:
         logger.error(f"Healthcheck: Groq API check failed: {e}")
         health_status["services"]["groq"] = "error"
-        health_status["status"] = "degraded"
 
     # Return 200 even if degraded, so proxy can decide routing policy,
     # or return 503 if you prefer it to be pulled from rotation.

@@ -1,4 +1,3 @@
-from playwright.async_api import async_playwright
 from datetime import datetime, timezone
 from jinja2 import Environment, select_autoescape
 
@@ -66,6 +65,7 @@ class PDFGenerator:
             "current_year": datetime.now(timezone.utc).year
         })
         
+        from playwright.async_api import async_playwright
         async with async_playwright() as p:
             browser = await p.chromium.launch(args=['--no-sandbox'])
             page = await browser.new_page()

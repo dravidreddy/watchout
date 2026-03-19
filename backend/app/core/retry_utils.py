@@ -25,7 +25,7 @@ T = TypeVar('T')
 RETRYABLE_EXCEPTIONS = (
     ConnectionError,
     TimeoutError,
-    # Add Groq-specific exceptions here when identified
+    # Add provider-specific exceptions here when identified
 )
 
 

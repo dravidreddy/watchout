@@ -36,13 +36,15 @@ class Settings(BaseSettings):
     firebase_private_key: str = ""
     firebase_client_email: str = ""
     
-    # Groq AI
-    groq_api_key: str = ""
-    groq_main_model: str = "llama-3.3-70b-versatile"  # Main reasoning + itinerary generation
-    groq_fast_model: str = "llama3-8b-8192"  # Fast UI + small tasks
-    
-    # OpenAI (Fallback SC1)
+    # OpenAI (Primary)
     openai_api_key: str = ""
+    openai_main_model: str = "gpt-4o"  # Main reasoning + itinerary generation
+    openai_fast_model: str = "gpt-4o-mini"  # Fast UI + small tasks
+    
+    # Groq AI (Fallback)
+    groq_api_key: str = ""
+    groq_main_model: str = "llama-3.3-70b-versatile"  # Fallback main model
+    groq_fast_model: str = "llama3-8b-8192"  # Fallback fast model
     
     # Gemini
     gemini_api_key: str = ""
